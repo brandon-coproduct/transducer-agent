@@ -1,0 +1,62 @@
+[package]
+name = "transducer-agent"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Distributed transducer agent for Claude Code workloads"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/coproduct/transducer-agent"
+keywords = ["executor", "claude", "ai", "distributed", "agent"]
+categories = ["command-line-utilities", "asynchronous"]
+readme = "README.md"
+
+[[bin]]
+name = "transducer"
+path = "src/main.rs"
+
+[dependencies]
+# Transducer API (proto definitions)
+# For development, use path dependency; for release, use crates.io version
+transducer-api = { path = "../transducer-api" }
+# transducer-api = "0.1"
+
+# Async runtime
+tokio = { version = "1", features = ["full", "process"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# gRPC client
+tonic = { version = "0.14", features = ["channel", "tls-ring", "tls-native-roots"] }
+
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Error handling
+anyhow = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hostname = "0.4"
+
+# SPIFFE/SPIRE for workload identity (mTLS)
+spiffe = { version = "0.11", features = ["workload-api-x509"] }
+pem = "3"
+rustls = "0.23"
+tokio-rustls = "0.26"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"

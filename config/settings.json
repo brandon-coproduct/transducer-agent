@@ -1,0 +1,96 @@
+{
+  "$schema": "https://claude.ai/schemas/claude-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(cargo *)",
+      "Bash(npm *)",
+      "Bash(pnpm *)",
+      "Bash(yarn *)",
+      "Bash(make *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(diff *)",
+      "Bash(mkdir *)",
+      "Bash(rm *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(touch *)",
+      "Bash(chmod *)",
+      "Read",
+      "Edit",
+      "Write(/workspaces/**)",
+      "Write(/tmp/**)",
+      "Glob",
+      "Grep",
+      "Task"
+    ],
+    "deny": [
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(nc *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(rsync *)",
+      "Bash(docker *)",
+      "Bash(kubectl *)",
+      "Bash(fly *)",
+      "Bash(sudo *)",
+      "Bash(su *)",
+      "Bash(passwd *)",
+      "Bash(chmod 777 *)",
+      "Bash(chown *)",
+      "Write(/etc/**)",
+      "Write(/usr/**)",
+      "Write(/var/**)",
+      "Write(/root/**)",
+      "Write(/home/transducer/.ssh/**)",
+      "Write(/home/transducer/.aws/**)",
+      "Write(/home/transducer/.config/gcloud/**)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "allow": [
+        "/workspaces",
+        "/tmp",
+        "/home/transducer/.cache"
+      ],
+      "deny": [
+        "/etc",
+        "/var",
+        "/root",
+        "/home/transducer/.ssh",
+        "/home/transducer/.aws",
+        "/home/transducer/.config/gcloud"
+      ]
+    },
+    "network": {
+      "allow": [
+        "api.anthropic.com:443",
+        "github.com:443",
+        "api.github.com:443",
+        "objects.githubusercontent.com:443",
+        "crates.io:443",
+        "index.crates.io:443",
+        "static.crates.io:443",
+        "registry.npmjs.org:443"
+      ],
+      "deny": [
+        "*"
+      ]
+    }
+  },
+  "behavior": {
+    "autoCommit": false,
+    "createPullRequest": true,
+    "maxTurns": 50,
+    "turnTimeout": 300
+  }
+}
