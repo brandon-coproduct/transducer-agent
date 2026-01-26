@@ -54,18 +54,19 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout transducer-api
         uses: actions/checkout@v4
         with:
           repository: brandon-coproduct/transducer-api
-          path: transducer-api
+          path: ../transducer-api
 
       - name: Checkout transducer-sandbox
         uses: actions/checkout@v4
         with:
           repository: brandon-coproduct/transducer-sandbox
-          path: transducer-sandbox
+          path: ../transducer-sandbox
 
       # Install cross-compilation dependencies for Linux targets
       - name: Install Linux cross-compilation tools
