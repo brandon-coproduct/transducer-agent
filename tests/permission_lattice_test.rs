@@ -101,14 +101,13 @@ async fn test_basic_allows_ls() {
 /// Test that BASIC level can run cat.
 #[tokio::test]
 async fn test_basic_allows_cat() {
-    let output = run_with_level(
-        PermissionLevel::Basic,
-        &["cat", "/private/etc/protocols"],
-    )
-    .await;
+    let output = run_with_level(PermissionLevel::Basic, &["cat", "/private/etc/protocols"]).await;
 
     println!("BASIC cat:");
-    println!("  stdout (first 100 chars): {}", &output.stdout[..output.stdout.len().min(100)]);
+    println!(
+        "  stdout (first 100 chars): {}",
+        &output.stdout[..output.stdout.len().min(100)]
+    );
     println!("  stderr: {}", output.stderr.trim());
     println!("  exit_code: {}", output.exit_code);
 
@@ -152,7 +151,10 @@ async fn test_tools_allows_env() {
     let output = run_with_level(PermissionLevel::Tools, &["env"]).await;
 
     println!("TOOLS env:");
-    println!("  stdout (first 200 chars): {}", &output.stdout[..output.stdout.len().min(200)]);
+    println!(
+        "  stdout (first 200 chars): {}",
+        &output.stdout[..output.stdout.len().min(200)]
+    );
     println!("  stderr: {}", output.stderr.trim());
     println!("  exit_code: {}", output.exit_code);
 
@@ -170,7 +172,10 @@ async fn test_tools_allows_hostname() {
     println!("  exit_code: {}", output.exit_code);
 
     assert_eq!(output.exit_code, 0, "TOOLS should allow hostname");
-    assert!(!output.stdout.trim().is_empty(), "hostname should return something");
+    assert!(
+        !output.stdout.trim().is_empty(),
+        "hostname should return something"
+    );
 }
 
 // ============================================================================
@@ -182,11 +187,7 @@ async fn test_tools_allows_hostname() {
 async fn test_permissive_allows_complex_commands() {
     let output = run_with_level(
         PermissionLevel::Permissive,
-        &[
-            "sh",
-            "-c",
-            "echo 'start' && ls / && echo 'end'",
-        ],
+        &["sh", "-c", "echo 'start' && ls / && echo 'end'"],
     )
     .await;
 
@@ -195,7 +196,10 @@ async fn test_permissive_allows_complex_commands() {
     println!("  stderr: {}", output.stderr.trim());
     println!("  exit_code: {}", output.exit_code);
 
-    assert_eq!(output.exit_code, 0, "PERMISSIVE should allow complex commands");
+    assert_eq!(
+        output.exit_code, 0,
+        "PERMISSIVE should allow complex commands"
+    );
     assert!(output.stdout.contains("start"));
     assert!(output.stdout.contains("end"));
 }
@@ -251,11 +255,8 @@ async fn test_all_levels_restrict_etc_write() {
         PermissionLevel::Tools,
         // Skip PERMISSIVE as it may allow more
     ] {
-        let output = run_with_level(
-            level,
-            &["sh", "-c", "echo test > /private/etc/test-file"],
-        )
-        .await;
+        let output =
+            run_with_level(level, &["sh", "-c", "echo test > /private/etc/test-file"]).await;
 
         println!("{:?} /etc write:", level);
         println!("  exit_code: {}", output.exit_code);
@@ -294,17 +295,16 @@ async fn test_minimal_exit_codes() {
     println!("MINIMAL exit codes:");
     println!("  exit_code: {}", output.exit_code);
 
-    assert_eq!(output.exit_code, 42, "MINIMAL should propagate exit code 42");
+    assert_eq!(
+        output.exit_code, 42,
+        "MINIMAL should propagate exit code 42"
+    );
 }
 
 /// Test that BASIC level can run nested shells.
 #[tokio::test]
 async fn test_basic_nested_shells() {
-    let output = run_with_level(
-        PermissionLevel::Basic,
-        &["sh", "-c", "sh -c 'echo nested'"],
-    )
-    .await;
+    let output = run_with_level(PermissionLevel::Basic, &["sh", "-c", "sh -c 'echo nested'"]).await;
 
     println!("BASIC nested shells:");
     println!("  stdout: {}", output.stdout.trim());
@@ -344,8 +344,14 @@ async fn test_minimal_reads_dev_null() {
     println!("  stdout: '{}'", output.stdout);
     println!("  exit_code: {}", output.exit_code);
 
-    assert_eq!(output.exit_code, 0, "MINIMAL should allow reading /dev/null");
-    assert!(output.stdout.is_empty(), "Reading /dev/null should return empty");
+    assert_eq!(
+        output.exit_code, 0,
+        "MINIMAL should allow reading /dev/null"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "Reading /dev/null should return empty"
+    );
 }
 
 /// Test that MINIMAL level can read /dev/urandom.
@@ -361,7 +367,10 @@ async fn test_minimal_reads_urandom() {
     println!("  stdout: {}", output.stdout.trim());
     println!("  exit_code: {}", output.exit_code);
 
-    assert_eq!(output.exit_code, 0, "MINIMAL should allow reading /dev/urandom");
+    assert_eq!(
+        output.exit_code, 0,
+        "MINIMAL should allow reading /dev/urandom"
+    );
     // wc -c returns byte count - should be 8
     let byte_count: i32 = output.stdout.trim().parse().unwrap_or(0);
     assert_eq!(byte_count, 8, "Should read 8 bytes from urandom");
@@ -387,17 +396,19 @@ async fn test_basic_reads_usr_bin() {
 /// Test that BASIC level can read /private/etc/protocols.
 #[tokio::test]
 async fn test_basic_reads_etc_protocols() {
-    let output = run_with_level(
-        PermissionLevel::Basic,
-        &["cat", "/private/etc/protocols"],
-    )
-    .await;
+    let output = run_with_level(PermissionLevel::Basic, &["cat", "/private/etc/protocols"]).await;
 
     println!("BASIC reads /etc/protocols:");
-    println!("  stdout (first 100): {}", &output.stdout[..output.stdout.len().min(100)]);
+    println!(
+        "  stdout (first 100): {}",
+        &output.stdout[..output.stdout.len().min(100)]
+    );
     println!("  exit_code: {}", output.exit_code);
 
-    assert_eq!(output.exit_code, 0, "BASIC should allow reading /etc/protocols");
+    assert_eq!(
+        output.exit_code, 0,
+        "BASIC should allow reading /etc/protocols"
+    );
     assert!(output.stdout.contains("tcp") || output.stdout.contains("udp"));
 }
 
@@ -426,10 +437,7 @@ async fn test_minimal_denies_usr_bin() {
     println!("  exit_code: {}", output.exit_code);
 
     // MINIMAL should not have /usr/bin read access
-    assert_ne!(
-        output.exit_code, 0,
-        "MINIMAL should not access /usr/bin"
-    );
+    assert_ne!(output.exit_code, 0, "MINIMAL should not access /usr/bin");
 }
 
 /// Test that all levels deny home directory read (policy-based).
@@ -440,7 +448,16 @@ async fn test_all_deny_home_read() {
         PermissionLevel::Basic,
         PermissionLevel::Tools,
     ] {
-        let output = run_with_level(level, &["ls", std::env::var("HOME").unwrap_or("/Users/test".to_string()).as_str()]).await;
+        let output = run_with_level(
+            level,
+            &[
+                "ls",
+                std::env::var("HOME")
+                    .unwrap_or("/Users/test".to_string())
+                    .as_str(),
+            ],
+        )
+        .await;
 
         println!("{:?} home read:", level);
         println!("  exit_code: {}", output.exit_code);
@@ -464,7 +481,11 @@ async fn test_all_deny_home_read() {
 async fn test_minimal_denies_network() {
     let output = run_with_level(
         PermissionLevel::Minimal,
-        &["sh", "-c", "nc -z -w 1 1.1.1.1 80 2>&1 || echo 'network denied'"],
+        &[
+            "sh",
+            "-c",
+            "nc -z -w 1 1.1.1.1 80 2>&1 || echo 'network denied'",
+        ],
     )
     .await;
 
@@ -474,7 +495,9 @@ async fn test_minimal_denies_network() {
     println!("  exit_code: {}", output.exit_code);
 
     // Either nc fails with non-zero exit or sandbox blocks it
-    let blocked = output.exit_code != 0 || output.stdout.contains("denied") || output.stderr.contains("denied");
+    let blocked = output.exit_code != 0
+        || output.stdout.contains("denied")
+        || output.stderr.contains("denied");
     assert!(blocked, "MINIMAL should deny network access");
 }
 
@@ -483,7 +506,11 @@ async fn test_minimal_denies_network() {
 async fn test_basic_denies_network() {
     let output = run_with_level(
         PermissionLevel::Basic,
-        &["sh", "-c", "nc -z -w 1 1.1.1.1 80 2>&1 || echo 'network denied'"],
+        &[
+            "sh",
+            "-c",
+            "nc -z -w 1 1.1.1.1 80 2>&1 || echo 'network denied'",
+        ],
     )
     .await;
 
@@ -493,7 +520,9 @@ async fn test_basic_denies_network() {
     println!("  exit_code: {}", output.exit_code);
 
     // Either nc fails with non-zero exit or sandbox blocks it
-    let blocked = output.exit_code != 0 || output.stdout.contains("denied") || output.stderr.contains("denied");
+    let blocked = output.exit_code != 0
+        || output.stdout.contains("denied")
+        || output.stderr.contains("denied");
     assert!(blocked, "BASIC should deny network access");
 }
 
@@ -502,7 +531,11 @@ async fn test_basic_denies_network() {
 async fn test_tools_allows_tcp() {
     let output = run_with_level(
         PermissionLevel::Tools,
-        &["sh", "-c", "nc -z -w 2 1.1.1.1 80 && echo 'connected' || echo 'failed'"],
+        &[
+            "sh",
+            "-c",
+            "nc -z -w 2 1.1.1.1 80 && echo 'connected' || echo 'failed'",
+        ],
     )
     .await;
 
@@ -546,7 +579,11 @@ async fn test_tools_dns_resolution() {
 async fn test_permissive_allows_all_network() {
     let output = run_with_level(
         PermissionLevel::Permissive,
-        &["sh", "-c", "nc -z -w 2 1.1.1.1 80 && echo 'connected' || echo 'timeout'"],
+        &[
+            "sh",
+            "-c",
+            "nc -z -w 2 1.1.1.1 80 && echo 'connected' || echo 'timeout'",
+        ],
     )
     .await;
 
@@ -572,7 +609,14 @@ async fn test_write_tmp_with_policy() {
     let test_file = format!("/tmp/perm-test-{}", std::process::id());
     let output = run_with_level(
         PermissionLevel::Basic,
-        &["sh", "-c", &format!("echo 'data' > {} && cat {} && rm {}", test_file, test_file, test_file)],
+        &[
+            "sh",
+            "-c",
+            &format!(
+                "echo 'data' > {} && cat {} && rm {}",
+                test_file, test_file, test_file
+            ),
+        ],
     )
     .await;
 
@@ -584,7 +628,10 @@ async fn test_write_tmp_with_policy() {
     // Cleanup in case test failed
     let _ = std::fs::remove_file(&test_file);
 
-    assert_eq!(output.exit_code, 0, "BASIC should allow writing to /tmp per policy");
+    assert_eq!(
+        output.exit_code, 0,
+        "BASIC should allow writing to /tmp per policy"
+    );
     assert_eq!(output.stdout.trim(), "data");
 }
 
@@ -602,7 +649,10 @@ async fn test_deny_write_outside_policy() {
     println!("  stderr: {}", output.stderr.trim());
     println!("  exit_code: {}", output.exit_code);
 
-    assert_ne!(output.exit_code, 0, "BASIC should deny writes outside policy");
+    assert_ne!(
+        output.exit_code, 0,
+        "BASIC should deny writes outside policy"
+    );
 }
 
 /// Test that home directory writes are denied.
@@ -616,11 +666,8 @@ async fn test_deny_write_home() {
         PermissionLevel::Basic,
         PermissionLevel::Tools,
     ] {
-        let output = run_with_level(
-            level,
-            &["sh", "-c", &format!("touch {} 2>&1", test_file)],
-        )
-        .await;
+        let output =
+            run_with_level(level, &["sh", "-c", &format!("touch {} 2>&1", test_file)]).await;
 
         println!("{:?} home write:", level);
         println!("  exit_code: {}", output.exit_code);
@@ -658,7 +705,11 @@ async fn test_minimal_lacks_basic_capabilities() {
 async fn test_basic_lacks_tools_network() {
     let output = run_with_level(
         PermissionLevel::Basic,
-        &["sh", "-c", "exec 3<>/dev/tcp/1.1.1.1/80 2>&1 && echo ok || echo denied"],
+        &[
+            "sh",
+            "-c",
+            "exec 3<>/dev/tcp/1.1.1.1/80 2>&1 && echo ok || echo denied",
+        ],
     )
     .await;
 
@@ -669,7 +720,10 @@ async fn test_basic_lacks_tools_network() {
 
     // /dev/tcp is a bash-specific feature, but sandbox should still block network
     let blocked = output.stdout.contains("denied") || output.exit_code != 0;
-    assert!(blocked, "BASIC should not have TOOLS's network capabilities");
+    assert!(
+        blocked,
+        "BASIC should not have TOOLS's network capabilities"
+    );
 }
 
 /// Test that TOOLS lacks PERMISSIVE's unrestricted capabilities.
@@ -677,11 +731,7 @@ async fn test_basic_lacks_tools_network() {
 async fn test_tools_has_restrictions() {
     // TOOLS should still respect policy restrictions
     let home = std::env::var("HOME").unwrap_or("/Users/test".to_string());
-    let output = run_with_level(
-        PermissionLevel::Tools,
-        &["ls", &home],
-    )
-    .await;
+    let output = run_with_level(PermissionLevel::Tools, &["ls", &home]).await;
 
     println!("TOOLS restrictions (home):");
     println!("  exit_code: {}", output.exit_code);
@@ -705,7 +755,10 @@ async fn test_symlink_expansion_tmp() {
     let output = run_with_level(PermissionLevel::Basic, &["ls", "-la", "/tmp"]).await;
 
     println!("Symlink /tmp:");
-    println!("  stdout (first 200): {}", &output.stdout[..output.stdout.len().min(200)]);
+    println!(
+        "  stdout (first 200): {}",
+        &output.stdout[..output.stdout.len().min(200)]
+    );
     println!("  exit_code: {}", output.exit_code);
 
     assert_eq!(output.exit_code, 0, "Sandbox should handle /tmp symlink");
@@ -718,7 +771,10 @@ async fn test_symlink_expansion_var() {
     let output = run_with_level(PermissionLevel::Basic, &["ls", "/var/db"]).await;
 
     println!("Symlink /var:");
-    println!("  stdout (first 200): {}", &output.stdout[..output.stdout.len().min(200)]);
+    println!(
+        "  stdout (first 200): {}",
+        &output.stdout[..output.stdout.len().min(200)]
+    );
     println!("  stderr: {}", output.stderr.trim());
     println!("  exit_code: {}", output.exit_code);
 
@@ -753,7 +809,12 @@ async fn test_concurrent_sandbox_executions() {
 
     println!("Concurrent executions:");
     for (i, output) in results.iter().enumerate() {
-        println!("  {}: exit={}, stdout={}", i, output.exit_code, output.stdout.trim());
+        println!(
+            "  {}: exit={}, stdout={}",
+            i,
+            output.exit_code,
+            output.stdout.trim()
+        );
     }
 
     for (i, output) in results.iter().enumerate() {
@@ -770,13 +831,14 @@ async fn test_concurrent_sandbox_executions() {
 #[tokio::test]
 async fn test_rapid_sequential_executions() {
     for i in 0..10 {
-        let output = run_with_level(
-            PermissionLevel::Minimal,
-            &["echo", &format!("seq-{}", i)],
-        )
-        .await;
+        let output =
+            run_with_level(PermissionLevel::Minimal, &["echo", &format!("seq-{}", i)]).await;
 
-        assert_eq!(output.exit_code, 0, "Sequential execution {} should succeed", i);
+        assert_eq!(
+            output.exit_code, 0,
+            "Sequential execution {} should succeed",
+            i
+        );
         assert_eq!(output.stdout.trim(), format!("seq-{}", i));
     }
     println!("10 rapid sequential executions completed successfully");

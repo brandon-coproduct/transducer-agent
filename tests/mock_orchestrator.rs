@@ -212,7 +212,10 @@ impl TransducerService for MockOrchestrator {
         request: Request<DeregisterRequest>,
     ) -> Result<Response<DeregisterResponse>, Status> {
         let req = request.into_inner();
-        println!("👋 Transducer deregistered: {} ({})", req.transducer_id, req.reason);
+        println!(
+            "👋 Transducer deregistered: {} ({})",
+            req.transducer_id, req.reason
+        );
 
         Ok(Response::new(DeregisterResponse {
             success: true,

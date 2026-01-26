@@ -39,7 +39,11 @@ async fn test_write_allowed_path() {
     // Try to write to /tmp (allowed)
     let test_file = format!("/tmp/sandbox-test-{}", std::process::id());
     let output = sandbox
-        .run_with_output(&["sh", "-c", &format!("echo 'test' > {} && cat {}", test_file, test_file)])
+        .run_with_output(&[
+            "sh",
+            "-c",
+            &format!("echo 'test' > {} && cat {}", test_file, test_file),
+        ])
         .await
         .expect("Sandbox execution failed");
 
@@ -53,7 +57,11 @@ async fn test_write_allowed_path() {
     let _ = std::fs::remove_file(&socket_path);
 
     assert_eq!(output.exit_code, 0, "Write to allowed path should succeed");
-    assert_eq!(output.stdout.trim(), "test", "Should read back written content");
+    assert_eq!(
+        output.stdout.trim(),
+        "test",
+        "Should read back written content"
+    );
 }
 
 /// Test that writing to forbidden paths fails.
@@ -99,7 +107,10 @@ async fn test_write_forbidden_path() {
     // On macOS with Seatbelt, write to non-allowed path should fail
     // The exit code should be non-zero due to permission denied
     if cfg!(target_os = "macos") {
-        assert_ne!(output.exit_code, 0, "Write to forbidden path should fail on macOS");
+        assert_ne!(
+            output.exit_code, 0,
+            "Write to forbidden path should fail on macOS"
+        );
 
         // Verify the file wasn't actually created (the sandbox blocked it)
         assert!(
@@ -138,12 +149,21 @@ async fn test_deny_overrides_allow() {
     .expect("Failed to parse policy");
 
     // First verify policy check works
-    assert!(policy.can_write("/tmp/normal").allowed, "Normal /tmp path should be allowed");
-    assert!(!policy.can_write("/tmp/secret/file").allowed, "Denied path should not be allowed");
+    assert!(
+        policy.can_write("/tmp/normal").allowed,
+        "Normal /tmp path should be allowed"
+    );
+    assert!(
+        !policy.can_write("/tmp/secret/file").allowed,
+        "Denied path should not be allowed"
+    );
 
     println!("Policy check:");
     println!("  /tmp/normal: {}", policy.can_write("/tmp/normal").allowed);
-    println!("  /tmp/secret/file: {}", policy.can_write("/tmp/secret/file").allowed);
+    println!(
+        "  /tmp/secret/file: {}",
+        policy.can_write("/tmp/secret/file").allowed
+    );
 }
 
 /// Test that reading system paths works.
@@ -216,8 +236,12 @@ async fn test_reflection_api_accessible() {
     // Try to query the reflection API
     let output = sandbox
         .run_with_output(&[
-            "sh", "-c",
-            &format!("sleep 0.5 && curl -s --unix-socket {} http://localhost/policy | head -c 100", socket_path)
+            "sh",
+            "-c",
+            &format!(
+                "sleep 0.5 && curl -s --unix-socket {} http://localhost/policy | head -c 100",
+                socket_path
+            ),
         ])
         .await
         .expect("Sandbox execution failed");
@@ -272,27 +296,35 @@ fn test_policy_permission_checks() {
         ("/workspace/src/main.rs", true),
         ("/tmp/test.txt", true),
         ("/etc/passwd", false),
-        ("/workspace/.env", false),  // denied
-        ("/workspace/secrets/api.key", false),  // denied
+        ("/workspace/.env", false),            // denied
+        ("/workspace/secrets/api.key", false), // denied
     ];
     for (path, expected) in cases {
         let result = policy.can_write(path);
         println!("  {} -> {} (expected: {})", path, result.allowed, expected);
-        assert_eq!(result.allowed, expected, "can_write({}) should be {}", path, expected);
+        assert_eq!(
+            result.allowed, expected,
+            "can_write({}) should be {}",
+            path, expected
+        );
     }
 
     // Filesystem read checks
     println!("\nFilesystem Read:");
     let cases = [
-        ("/workspace/src/main.rs", true),  // write implies read
+        ("/workspace/src/main.rs", true), // write implies read
         ("/usr/lib/libc.so", true),
         ("/etc/passwd", false),
-        ("/workspace/.env", false),  // denied
+        ("/workspace/.env", false), // denied
     ];
     for (path, expected) in cases {
         let result = policy.can_read(path);
         println!("  {} -> {} (expected: {})", path, result.allowed, expected);
-        assert_eq!(result.allowed, expected, "can_read({}) should be {}", path, expected);
+        assert_eq!(
+            result.allowed, expected,
+            "can_read({}) should be {}",
+            path, expected
+        );
     }
 
     // Network checks
@@ -306,8 +338,15 @@ fn test_policy_permission_checks() {
     ];
     for (domain, expected) in cases {
         let result = policy.can_access_network(domain);
-        println!("  {} -> {} (expected: {})", domain, result.allowed, expected);
-        assert_eq!(result.allowed, expected, "can_access_network({}) should be {}", domain, expected);
+        println!(
+            "  {} -> {} (expected: {})",
+            domain, result.allowed, expected
+        );
+        assert_eq!(
+            result.allowed, expected,
+            "can_access_network({}) should be {}",
+            domain, expected
+        );
     }
 
     // Bash checks
@@ -323,7 +362,11 @@ fn test_policy_permission_checks() {
     for (cmd, expected) in cases {
         let result = policy.can_run_bash(cmd);
         println!("  {} -> {} (expected: {})", cmd, result.allowed, expected);
-        assert_eq!(result.allowed, expected, "can_run_bash({}) should be {}", cmd, expected);
+        assert_eq!(
+            result.allowed, expected,
+            "can_run_bash({}) should be {}",
+            cmd, expected
+        );
     }
 
     println!("\n=== All Policy Checks Passed ===\n");

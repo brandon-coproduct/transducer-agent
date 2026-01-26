@@ -63,12 +63,17 @@ impl TransducerService for TestOrchestrator {
 
         tokio::spawn(async move {
             while let Ok(Some(req)) = stream.message().await {
-                println!("💓 HEARTBEAT: {} (active={})", req.transducer_id, req.active_work_count);
-                let _ = tx.send(Ok(HeartbeatResponse {
-                    acknowledged: true,
-                    control_signal: ControlSignal::Continue as i32,
-                    next_heartbeat_secs: 15,
-                })).await;
+                println!(
+                    "💓 HEARTBEAT: {} (active={})",
+                    req.transducer_id, req.active_work_count
+                );
+                let _ = tx
+                    .send(Ok(HeartbeatResponse {
+                        acknowledged: true,
+                        control_signal: ControlSignal::Continue as i32,
+                        next_heartbeat_secs: 15,
+                    }))
+                    .await;
             }
         });
 
@@ -128,7 +133,10 @@ impl TransducerService for TestOrchestrator {
         request: Request<ReportProgressRequest>,
     ) -> Result<Response<ReportProgressResponse>, Status> {
         let req = request.into_inner();
-        println!("📊 PROGRESS: {} - {}%", req.assignment_id, req.progress_percent);
+        println!(
+            "📊 PROGRESS: {} - {}%",
+            req.assignment_id, req.progress_percent
+        );
         Ok(Response::new(ReportProgressResponse {
             continue_execution: true,
             new_deadline: None,
@@ -143,8 +151,22 @@ impl TransducerService for TestOrchestrator {
         println!("🎉 RESULT RECEIVED:");
         println!("   Assignment: {}", req.assignment_id);
         println!("   Status: {}", req.status);
-        println!("   Summary: {}", if req.summary.is_empty() { "(empty)" } else { &req.summary });
-        println!("   Error: {}", if req.error.is_empty() { "(none)" } else { &req.error });
+        println!(
+            "   Summary: {}",
+            if req.summary.is_empty() {
+                "(empty)"
+            } else {
+                &req.summary
+            }
+        );
+        println!(
+            "   Error: {}",
+            if req.error.is_empty() {
+                "(none)"
+            } else {
+                &req.error
+            }
+        );
         println!("   Duration: {}ms", req.duration_ms);
 
         self.results.lock().await.push(req);
@@ -227,7 +249,9 @@ async fn test_e2e_work_execution() {
         .await
         .unwrap();
 
-    let mut client = transducer_api::v1::transducer_service_client::TransducerServiceClient::new(channel.clone());
+    let mut client = transducer_api::v1::transducer_service_client::TransducerServiceClient::new(
+        channel.clone(),
+    );
 
     // Register
     let reg_response = client
@@ -374,7 +398,7 @@ async fn test_binary_execution() {
             &format!("http://{}", local_addr),
             "--disable-spiffe",
             "--claude-path",
-            "echo",  // Use echo as mock claude
+            "echo", // Use echo as mock claude
             "--transducer-id",
             "binary-test-agent",
         ])
@@ -564,10 +588,8 @@ async fn test_sandboxed_execution() {
     println!("\n=== Sandboxed Execution Test ===\n");
 
     // Find the policy file
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| ".".to_string());
-    let policy_path = std::path::Path::new(&manifest_dir)
-        .join("tests/fixtures/test-policy.json");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let policy_path = std::path::Path::new(&manifest_dir).join("tests/fixtures/test-policy.json");
 
     if !policy_path.exists() {
         println!("⚠️  Policy file not found: {:?}", policy_path);

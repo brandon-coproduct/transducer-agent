@@ -35,8 +35,8 @@ mod spiffe_auth;
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -118,7 +118,11 @@ struct Args {
     sandbox_policy: Option<String>,
 
     /// Socket path for sandbox reflection API
-    #[arg(long, env = "SANDBOX_SOCKET", default_value = "/run/transducer/policy.sock")]
+    #[arg(
+        long,
+        env = "SANDBOX_SOCKET",
+        default_value = "/run/transducer/policy.sock"
+    )]
     sandbox_socket: String,
 
     /// Disable sandbox even if policy is configured (for debugging)
@@ -380,9 +384,8 @@ async fn run_heartbeat_loop(
                 }
 
                 // Handle control signals
-                let signal =
-                    transducer_api::ControlSignal::try_from(response.control_signal)
-                        .unwrap_or(transducer_api::ControlSignal::Continue);
+                let signal = transducer_api::ControlSignal::try_from(response.control_signal)
+                    .unwrap_or(transducer_api::ControlSignal::Continue);
 
                 match signal {
                     transducer_api::ControlSignal::Shutdown => {
@@ -607,10 +610,7 @@ async fn execute_sandboxed(
     let sandbox_prompt = sandbox.generate_system_prompt();
 
     // Combine sandbox awareness with actual work prompt
-    let full_prompt = format!(
-        "{}\n\n---\n\n## Your Task\n\n{}",
-        sandbox_prompt, prompt
-    );
+    let full_prompt = format!("{}\n\n---\n\n## Your Task\n\n{}", sandbox_prompt, prompt);
 
     info!(
         assignment_id = %assignment_id,
