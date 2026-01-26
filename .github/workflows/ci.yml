@@ -11,65 +11,113 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  check:
-    name: Check
+  fmt:
+    name: Rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Checkout transducer-api
-        uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          repository: coproduct/transducer-api
-          path: transducer-api
+          components: rustfmt
+      - run: cargo fmt --check
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
-
+          components: clippy
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Check formatting
-        run: cargo fmt --check
+  test:
+    name: Test (${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, "1.77"]  # stable + MSRV
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
 
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Build
-        run: cargo build --release
-
-      - name: Test
-        run: cargo test --all-features
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
 
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: check
+    needs: [fmt, clippy, test]
     steps:
       - uses: actions/checkout@v4
-
       - name: Checkout transducer-api
         uses: actions/checkout@v4
         with:
-          repository: coproduct/transducer-api
-          path: ../transducer-api
-
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
@@ -82,29 +130,32 @@ jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
-    needs: check
+    needs: [fmt, clippy, test, build, docker]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
-
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
-
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
+      - run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:

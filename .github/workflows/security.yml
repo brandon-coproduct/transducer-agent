@@ -1,0 +1,47 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/deny.toml'
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/deny.toml'
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/audit@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
