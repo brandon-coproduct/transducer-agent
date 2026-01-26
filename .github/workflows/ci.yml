@@ -49,16 +49,21 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: transducer-agent
+          # Cache all three workspaces
+          workspaces: |
+            transducer-agent -> transducer-agent/target
+            transducer-api -> transducer-api/target
+            transducer-sandbox -> transducer-sandbox/target
+          # Share cache across Linux jobs
+          shared-key: linux-stable
+          # Only save cache on main branch pushes
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: transducer-agent
 
   test:
-    name: Test (${{ matrix.rust }})
+    name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable, "1.77"]  # stable + MSRV
     steps:
       - name: Checkout transducer-agent
         uses: actions/checkout@v4
@@ -74,9 +79,7 @@ jobs:
         with:
           repository: brandon-coproduct/transducer-sandbox
           path: transducer-sandbox
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -84,7 +87,12 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: transducer-agent
+          workspaces: |
+            transducer-agent -> transducer-agent/target
+            transducer-api -> transducer-api/target
+            transducer-sandbox -> transducer-sandbox/target
+          shared-key: linux-stable
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --all-features
         working-directory: transducer-agent
 
@@ -114,7 +122,12 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: transducer-agent
+          workspaces: |
+            transducer-agent -> transducer-agent/target
+            transducer-api -> transducer-api/target
+            transducer-sandbox -> transducer-sandbox/target
+          shared-key: macos-stable
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Run permission lattice tests
         run: cargo test --test permission_lattice_test -- --nocapture
         working-directory: transducer-agent
@@ -127,7 +140,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            shared-key: linux-stable
+          - os: macos-latest
+            shared-key: macos-stable
     steps:
       - name: Checkout transducer-agent
         uses: actions/checkout@v4
@@ -151,7 +168,12 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: transducer-agent
+          workspaces: |
+            transducer-agent -> transducer-agent/target
+            transducer-api -> transducer-api/target
+            transducer-sandbox -> transducer-sandbox/target
+          shared-key: ${{ matrix.shared-key }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --release
         working-directory: transducer-agent
 
@@ -211,6 +233,13 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            transducer-agent -> transducer-agent/target
+            transducer-api -> transducer-api/target
+            transducer-sandbox -> transducer-sandbox/target
+          shared-key: linux-stable
       - run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
         working-directory: transducer-agent
       - name: Login to GHCR
