@@ -53,7 +53,15 @@ use transducer_api::{
     TokenUsage, TransducerCapabilities, TransducerMetadata, TransducerServiceClient,
     TransducerStatus,
 };
+use transducer_sandbox::{Policy, Sandbox};
 use uuid::Uuid;
+
+/// Configuration for sandboxed execution
+#[derive(Clone)]
+struct SandboxConfig {
+    policy: Policy,
+    socket_path: String,
+}
 
 /// Distributed transducer agent for Claude Code workloads
 #[derive(Parser, Debug)]
@@ -104,6 +112,18 @@ struct Args {
     /// Disable SPIFFE authentication (use insecure connection)
     #[arg(long, env = "DISABLE_SPIFFE")]
     disable_spiffe: bool,
+
+    /// Path to sandbox policy JSON file (enables sandboxed execution)
+    #[arg(long, env = "SANDBOX_POLICY")]
+    sandbox_policy: Option<String>,
+
+    /// Socket path for sandbox reflection API
+    #[arg(long, env = "SANDBOX_SOCKET", default_value = "/run/transducer/policy.sock")]
+    sandbox_socket: String,
+
+    /// Disable sandbox even if policy is configured (for debugging)
+    #[arg(long, env = "DISABLE_SANDBOX")]
+    disable_sandbox: bool,
 }
 
 #[tokio::main]
@@ -142,11 +162,39 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|_| Uuid::new_v4().to_string())
         });
 
+    // Load sandbox policy if configured
+    let sandbox_config = if args.disable_sandbox {
+        info!("Sandbox disabled via flag");
+        None
+    } else if let Some(ref policy_path) = args.sandbox_policy {
+        match Policy::from_file(policy_path) {
+            Ok(policy) => {
+                info!(
+                    policy_path = %policy_path,
+                    version = %policy.version,
+                    "Loaded sandbox policy"
+                );
+                Some(SandboxConfig {
+                    policy,
+                    socket_path: args.sandbox_socket.clone(),
+                })
+            }
+            Err(e) => {
+                error!(error = %e, policy_path = %policy_path, "Failed to load sandbox policy");
+                return Err(e.into());
+            }
+        }
+    } else {
+        info!("No sandbox policy configured - running without isolation");
+        None
+    };
+
     info!(
         transducer_id = %transducer_id,
         orchestrator = %args.orchestrator_url,
         max_concurrent = args.max_concurrent,
         spiffe_auth = credentials.is_spiffe(),
+        sandboxed = sandbox_config.is_some(),
         "Starting transducer agent"
     );
 
@@ -237,6 +285,7 @@ async fn main() -> Result<()> {
         let max_concurrent = args.max_concurrent;
         let claude_path = args.claude_path.clone();
         let work_dir = args.work_dir.clone();
+        let sandbox_config = sandbox_config.clone();
         let client = TransducerServiceClient::new(channel.clone());
 
         tokio::spawn(async move {
@@ -247,6 +296,7 @@ async fn main() -> Result<()> {
                 max_concurrent,
                 claude_path,
                 work_dir,
+                sandbox_config,
             )
             .await
         })
@@ -370,6 +420,7 @@ async fn run_work_loop(
     max_concurrent: u32,
     claude_path: String,
     work_dir: Option<String>,
+    sandbox_config: Option<SandboxConfig>,
 ) -> Result<()> {
     let response = client
         .receive_work(ReceiveWorkRequest {
@@ -393,6 +444,7 @@ async fn run_work_loop(
                 let active_count = active_work_count.clone();
                 let claude_path = claude_path.clone();
                 let work_dir = work_dir.clone();
+                let sandbox_config = sandbox_config.clone();
 
                 tokio::spawn(async move {
                     let result = execute_work(
@@ -401,6 +453,7 @@ async fn run_work_loop(
                         assignment.repo_path.clone(),
                         &claude_path,
                         work_dir.as_deref(),
+                        sandbox_config.as_ref(),
                     )
                     .await;
 
@@ -462,14 +515,9 @@ async fn execute_work(
     repo_path: String,
     claude_path: &str,
     work_dir: Option<&str>,
+    sandbox_config: Option<&SandboxConfig>,
 ) -> Result<(String, u64)> {
     let start = std::time::Instant::now();
-
-    info!(
-        assignment_id = %assignment_id,
-        repo_path = %repo_path,
-        "Starting work execution"
-    );
 
     // Determine working directory
     let cwd = if !repo_path.is_empty() {
@@ -480,18 +528,121 @@ async fn execute_work(
         std::env::current_dir()?.to_string_lossy().to_string()
     };
 
-    // Build the claude command
+    // Execute with or without sandbox
+    let (output, exit_code) = if let Some(config) = sandbox_config {
+        info!(
+            assignment_id = %assignment_id,
+            repo_path = %repo_path,
+            sandbox = true,
+            "Starting sandboxed work execution"
+        );
+
+        execute_sandboxed(&assignment_id, &prompt, &cwd, claude_path, config).await?
+    } else {
+        info!(
+            assignment_id = %assignment_id,
+            repo_path = %repo_path,
+            sandbox = false,
+            "Starting unsandboxed work execution"
+        );
+
+        execute_direct(&assignment_id, &prompt, &cwd, claude_path).await?
+    };
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    info!(
+        assignment_id = %assignment_id,
+        success = exit_code == 0,
+        duration_ms = duration_ms,
+        "Work execution completed"
+    );
+
+    if exit_code == 0 {
+        Ok((output, duration_ms))
+    } else {
+        anyhow::bail!("Claude process exited with code {}: {}", exit_code, output)
+    }
+}
+
+/// Execute Claude directly (no sandbox)
+async fn execute_direct(
+    assignment_id: &str,
+    prompt: &str,
+    cwd: &str,
+    claude_path: &str,
+) -> Result<(String, i32)> {
     let mut cmd = Command::new(claude_path);
     cmd.arg("--print")
-        .arg(&prompt)
-        .current_dir(&cwd)
+        .arg(prompt)
+        .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // Spawn the process
     let mut child = cmd.spawn().context("Failed to spawn claude process")?;
 
-    // Capture output
+    let (output, errors) = capture_output(&mut child, assignment_id).await?;
+    let status = child.wait().await?;
+
+    if !status.success() && !errors.is_empty() {
+        return Ok((errors, status.code().unwrap_or(1)));
+    }
+
+    Ok((output, status.code().unwrap_or(0)))
+}
+
+/// Execute Claude inside sandbox
+async fn execute_sandboxed(
+    assignment_id: &str,
+    prompt: &str,
+    cwd: &str,
+    claude_path: &str,
+    config: &SandboxConfig,
+) -> Result<(String, i32)> {
+    // Create sandbox with system prompt injection
+    let sandbox = Sandbox::with_socket_path(config.policy.clone(), &config.socket_path)
+        .context("Failed to create sandbox")?;
+
+    // Generate sandbox-aware system prompt
+    let sandbox_prompt = sandbox.generate_system_prompt();
+
+    // Combine sandbox awareness with actual work prompt
+    let full_prompt = format!(
+        "{}\n\n---\n\n## Your Task\n\n{}",
+        sandbox_prompt, prompt
+    );
+
+    info!(
+        assignment_id = %assignment_id,
+        socket_path = %config.socket_path,
+        "Executing in sandbox"
+    );
+
+    // Run Claude with --dangerously-skip-permissions inside sandbox
+    // The sandbox enforces permissions at OS level, so we can skip Claude's prompts
+    let command = &[
+        claude_path,
+        "--dangerously-skip-permissions",
+        "--print",
+        &full_prompt,
+    ];
+
+    // Change to working directory before running sandbox
+    std::env::set_current_dir(cwd).context("Failed to change to working directory")?;
+
+    let exit_code = sandbox.run(command).await.context("Sandbox execution failed")?;
+
+    // Note: Output capture is handled differently in sandbox mode
+    // The sandbox runs the process directly, so we don't capture stdout/stderr here
+    // For now, return empty output - could be improved with a pipe through sandbox
+    Ok((String::new(), exit_code))
+}
+
+/// Capture stdout/stderr from a child process
+async fn capture_output(
+    child: &mut tokio::process::Child,
+    assignment_id: &str,
+) -> Result<(String, String)> {
     let stdout = child.stdout.take().expect("stdout not captured");
     let stderr = child.stderr.take().expect("stderr not captured");
 
@@ -504,7 +655,6 @@ async fn execute_work(
     let mut output = String::new();
     let mut errors = String::new();
 
-    // Read output streams
     loop {
         tokio::select! {
             line = stdout_lines.next_line() => {
@@ -537,24 +687,5 @@ async fn execute_work(
         }
     }
 
-    // Wait for process to complete
-    let status = child.wait().await?;
-    let duration_ms = start.elapsed().as_millis() as u64;
-
-    info!(
-        assignment_id = %assignment_id,
-        success = status.success(),
-        duration_ms = duration_ms,
-        "Work execution completed"
-    );
-
-    if status.success() {
-        Ok((output, duration_ms))
-    } else {
-        anyhow::bail!(
-            "Claude process exited with code {:?}: {}",
-            status.code(),
-            errors
-        )
-    }
+    Ok((output, errors))
 }
