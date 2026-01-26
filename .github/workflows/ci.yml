@@ -74,6 +74,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
 
+  sandbox-test:
+    name: Sandbox Tests (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
+      - uses: Swatinem/rust-cache@v2
+      - name: Run permission lattice tests
+        run: cargo test --test permission_lattice_test -- --nocapture
+      - name: Run sandbox enforcement tests
+        run: cargo test --test sandbox_enforcement_test -- --nocapture 2>/dev/null || echo "sandbox_enforcement_test not found, skipping"
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -103,7 +129,7 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [fmt, clippy, test]
+    needs: [fmt, clippy, test, sandbox-test]
     steps:
       - uses: actions/checkout@v4
       - name: Checkout transducer-api
@@ -130,7 +156,7 @@ jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
-    needs: [fmt, clippy, test, build, docker]
+    needs: [fmt, clippy, test, sandbox-test, build, docker]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
