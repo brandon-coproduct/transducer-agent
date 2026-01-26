@@ -1,0 +1,228 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: transducer
+
+permissions:
+  contents: write
+
+jobs:
+  # Build binaries for each platform
+  build-binaries:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Intel
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          # macOS Apple Silicon
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          # Linux x86_64 (GNU)
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          # Linux x86_64 (musl - static)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            archive: tar.gz
+          # Linux ARM64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
+
+      # Install cross-compilation dependencies for Linux targets
+      - name: Install Linux cross-compilation tools
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)
+              sudo apt-get install -y musl-tools
+              ;;
+            aarch64-unknown-linux-gnu)
+              sudo apt-get install -y gcc-aarch64-linux-gnu
+              echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create archive
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [[ "${{ matrix.archive }}" == "tar.gz" ]]; then
+            tar -czf ../../../${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz ${{ env.BINARY_NAME }}
+          fi
+          cd ../../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
+          path: ${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz
+          retention-days: 1
+
+  # Create universal macOS binary
+  create-universal-macos:
+    name: Create Universal macOS Binary
+    runs-on: macos-latest
+    needs: build-binaries
+    steps:
+      - name: Download x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-x86_64-apple-darwin
+          path: x86_64
+
+      - name: Download aarch64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-aarch64-apple-darwin
+          path: aarch64
+
+      - name: Extract binaries
+        run: |
+          mkdir -p extracted/x86_64 extracted/aarch64
+          tar -xzf x86_64/${{ env.BINARY_NAME }}-x86_64-apple-darwin.tar.gz -C extracted/x86_64
+          tar -xzf aarch64/${{ env.BINARY_NAME }}-aarch64-apple-darwin.tar.gz -C extracted/aarch64
+
+      - name: Create universal binary with lipo
+        run: |
+          lipo -create -output ${{ env.BINARY_NAME }} \
+            extracted/x86_64/${{ env.BINARY_NAME }} \
+            extracted/aarch64/${{ env.BINARY_NAME }}
+          file ${{ env.BINARY_NAME }}
+
+      - name: Create archive
+        run: |
+          tar -czf ${{ env.BINARY_NAME }}-universal-apple-darwin.tar.gz ${{ env.BINARY_NAME }}
+
+      - name: Upload universal binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-universal-apple-darwin
+          path: ${{ env.BINARY_NAME }}-universal-apple-darwin.tar.gz
+          retention-days: 1
+
+  # Create GitHub Release with all binaries
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-binaries, create-universal-macos]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -name "*.tar.gz" -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum *.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          generate_release_notes: true
+          files: |
+            release/*.tar.gz
+            release/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Update Homebrew tap (optional - requires separate tap repo)
+  update-homebrew:
+    name: Update Homebrew Formula
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: ${{ !contains(github.ref, '-alpha') && !contains(github.ref, '-beta') && !contains(github.ref, '-rc') }}
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download universal macOS binary for SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-universal-apple-darwin
+          path: .
+
+      - name: Calculate SHA256
+        id: sha
+        run: |
+          SHA=$(sha256sum ${{ env.BINARY_NAME }}-universal-apple-darwin.tar.gz | cut -d' ' -f1)
+          echo "SHA256=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Update Homebrew formula
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: brandon-coproduct/homebrew-transducer
+          event-type: update-formula
+          client-payload: |
+            {
+              "version": "${{ steps.version.outputs.VERSION }}",
+              "sha256": "${{ steps.sha.outputs.SHA256 }}",
+              "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.BINARY_NAME }}-universal-apple-darwin.tar.gz"
+            }
