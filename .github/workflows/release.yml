@@ -43,7 +43,22 @@ jobs:
             archive: tar.gz
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout transducer-agent
+        uses: actions/checkout@v4
+        with:
+          path: transducer-agent
+
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -55,18 +70,6 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout transducer-api
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-api
-          path: ../transducer-api
-
-      - name: Checkout transducer-sandbox
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-sandbox
-          path: ../transducer-sandbox
 
       # Install cross-compilation dependencies for Linux targets
       - name: Install Linux cross-compilation tools
@@ -85,19 +88,20 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
+          workspaces: transducer-agent
           key: ${{ matrix.target }}
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
+        working-directory: transducer-agent
 
       - name: Create archive
         shell: bash
         run: |
-          cd target/${{ matrix.target }}/release
+          cd transducer-agent/target/${{ matrix.target }}/release
           if [[ "${{ matrix.archive }}" == "tar.gz" ]]; then
-            tar -czf ../../../${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz ${{ env.BINARY_NAME }}
+            tar -czf ../../../../${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz ${{ env.BINARY_NAME }}
           fi
-          cd ../../..
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

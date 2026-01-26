@@ -25,7 +25,20 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout transducer-agent
+        uses: actions/checkout@v4
+        with:
+          path: transducer-agent
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -34,18 +47,11 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout transducer-api
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-api
-          path: ../transducer-api
-      - name: Checkout transducer-sandbox
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-sandbox
-          path: ../transducer-sandbox
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: transducer-agent
       - run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: transducer-agent
 
   test:
     name: Test (${{ matrix.rust }})
@@ -54,7 +60,20 @@ jobs:
       matrix:
         rust: [stable, "1.77"]  # stable + MSRV
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout transducer-agent
+        uses: actions/checkout@v4
+        with:
+          path: transducer-agent
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -63,45 +82,45 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout transducer-api
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-api
-          path: ../transducer-api
-      - name: Checkout transducer-sandbox
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-sandbox
-          path: ../transducer-sandbox
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: transducer-agent
       - run: cargo test --all-features
+        working-directory: transducer-agent
 
   sandbox-test:
     name: Sandbox Tests (macOS)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout transducer-agent
+        uses: actions/checkout@v4
+        with:
+          path: transducer-agent
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
       - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout transducer-api
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-api
-          path: ../transducer-api
-      - name: Checkout transducer-sandbox
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-sandbox
-          path: ../transducer-sandbox
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: transducer-agent
       - name: Run permission lattice tests
         run: cargo test --test permission_lattice_test -- --nocapture
+        working-directory: transducer-agent
       - name: Run sandbox enforcement tests
         run: cargo test --test sandbox_enforcement_test -- --nocapture 2>/dev/null || echo "sandbox_enforcement_test not found, skipping"
+        working-directory: transducer-agent
 
   build:
     name: Build (${{ matrix.os }})
@@ -110,48 +129,57 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout transducer-agent
+        uses: actions/checkout@v4
+        with:
+          path: transducer-agent
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
       - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout transducer-api
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-api
-          path: ../transducer-api
-      - name: Checkout transducer-sandbox
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-sandbox
-          path: ../transducer-sandbox
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: transducer-agent
       - run: cargo build --release
+        working-directory: transducer-agent
 
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
     needs: [fmt, clippy, test, sandbox-test]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout transducer-agent
+        uses: actions/checkout@v4
+        with:
+          path: transducer-agent
       - name: Checkout transducer-api
         uses: actions/checkout@v4
         with:
           repository: brandon-coproduct/transducer-api
-          path: ../transducer-api
+          path: transducer-api
       - name: Checkout transducer-sandbox
         uses: actions/checkout@v4
         with:
           repository: brandon-coproduct/transducer-sandbox
-          path: ../transducer-sandbox
+          path: transducer-sandbox
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: transducer-agent
           push: false
           tags: transducer-agent:test
           cache-from: type=gha
@@ -163,24 +191,28 @@ jobs:
     needs: [fmt, clippy, test, sandbox-test, build, docker]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout transducer-agent
+        uses: actions/checkout@v4
+        with:
+          path: transducer-agent
+      - name: Checkout transducer-api
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-api
+          path: transducer-api
+      - name: Checkout transducer-sandbox
+        uses: actions/checkout@v4
+        with:
+          repository: brandon-coproduct/transducer-sandbox
+          path: transducer-sandbox
       - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout transducer-api
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-api
-          path: ../transducer-api
-      - name: Checkout transducer-sandbox
-        uses: actions/checkout@v4
-        with:
-          repository: brandon-coproduct/transducer-sandbox
-          path: ../transducer-sandbox
       - run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+        working-directory: transducer-agent
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -190,7 +222,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: transducer-agent
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
