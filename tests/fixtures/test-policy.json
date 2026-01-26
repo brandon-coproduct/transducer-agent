@@ -1,0 +1,33 @@
+{
+  "version": "1",
+  "filesystem": {
+    "write": ["/tmp/**", "/var/tmp/**"],
+    "read": ["/usr/**", "/bin/**", "/Library/**", "/System/**", "/private/**", "/Users/**"],
+    "deny": ["**/.env", "**/.ssh/**", "**/.aws/**"]
+  },
+  "network": {
+    "allow": ["api.anthropic.com", "*.anthropic.com"],
+    "deny": []
+  },
+  "resources": {
+    "memory_mb": 4096,
+    "cpu_shares": 1024,
+    "pids_max": 100
+  },
+  "credentials": {
+    "drop_capabilities": false,
+    "no_new_privs": false
+  },
+  "environment": {
+    "allow": ["PATH", "HOME", "USER", "LANG", "ANTHROPIC_API_KEY", "TERM"],
+    "set": {
+      "TRANSDUCER_SANDBOX": "1"
+    }
+  },
+  "audit": {
+    "enabled": true,
+    "log_path": "/tmp/transducer-audit.jsonl",
+    "log_violations": true,
+    "log_allowed": false
+  }
+}

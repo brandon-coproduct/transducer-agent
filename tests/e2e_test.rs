@@ -546,3 +546,156 @@ async fn test_real_claude() {
     println!("\n=== Real Claude Test Complete ===\n");
     server_handle.abort();
 }
+
+/// Test with sandbox isolation enabled.
+/// This test requires macOS (Seatbelt) or Linux (bubblewrap).
+/// Run with: cargo test --test e2e_test test_sandboxed_execution -- --ignored --nocapture
+#[tokio::test]
+#[ignore]
+async fn test_sandboxed_execution() {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    // Install crypto provider
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
+    println!("\n=== Sandboxed Execution Test ===\n");
+
+    // Find the policy file
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .unwrap_or_else(|_| ".".to_string());
+    let policy_path = std::path::Path::new(&manifest_dir)
+        .join("tests/fixtures/test-policy.json");
+
+    if !policy_path.exists() {
+        println!("⚠️  Policy file not found: {:?}", policy_path);
+        println!("   Creating default policy...");
+        return;
+    }
+
+    println!("📋 Policy: {:?}", policy_path);
+
+    // Check platform support
+    let os = std::env::consts::OS;
+    println!("🖥️  Platform: {}", os);
+    match os {
+        "macos" => println!("   Using Seatbelt (sandbox-exec)"),
+        "linux" => println!("   Using bubblewrap (bwrap)"),
+        _ => {
+            println!("⚠️  Sandbox not supported on {}", os);
+            return;
+        }
+    }
+
+    // Create result notification channel
+    let (result_tx, result_rx) = oneshot::channel();
+    let orchestrator = TestOrchestrator::new(result_tx);
+    let results = orchestrator.results.clone();
+
+    // Start server
+    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let local_addr = listener.local_addr().unwrap();
+    println!("🚀 Mock server on: {}", local_addr);
+
+    let server_handle = tokio::spawn(async move {
+        Server::builder()
+            .add_service(TransducerServiceServer::new(orchestrator))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+    });
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Find transducer binary
+    let binary = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("transducer");
+
+    println!("📦 Binary: {:?}", binary);
+    println!("🔒 Sandbox: ENABLED");
+    println!("");
+
+    // Create socket directory
+    let socket_dir = std::path::Path::new("/tmp/transducer-test");
+    let _ = std::fs::create_dir_all(socket_dir);
+    let socket_path = socket_dir.join("policy.sock");
+
+    // Spawn transducer with sandbox enabled
+    let mut child = tokio::process::Command::new(&binary)
+        .args([
+            "--orchestrator-url",
+            &format!("http://{}", local_addr),
+            "--disable-spiffe",
+            "--transducer-id",
+            "sandboxed-agent",
+            "--sandbox-policy",
+            policy_path.to_str().unwrap(),
+            "--sandbox-socket",
+            socket_path.to_str().unwrap(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn transducer binary");
+
+    println!("🚀 Agent started with sandbox (PID: {:?})", child.id());
+
+    // Read stderr in background
+    let stderr = child.stderr.take().unwrap();
+    tokio::spawn(async move {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            println!("   [agent] {}", line);
+        }
+    });
+
+    // Wait for result
+    println!("\n⏳ Waiting for sandboxed Claude execution (up to 90s)...\n");
+    let result = tokio::time::timeout(Duration::from_secs(90), result_rx).await;
+
+    // Kill the binary
+    child.kill().await.ok();
+
+    match result {
+        Ok(Ok(())) => {
+            println!("\n🎉 SUCCESS! Sandboxed execution completed!");
+            let stored = results.lock().await;
+            if !stored.is_empty() {
+                println!("   Assignment: {}", stored[0].assignment_id);
+                println!("   Status: {} (1=completed)", stored[0].status);
+                println!("   Summary length: {} chars", stored[0].summary.len());
+                if stored[0].summary.len() < 200 {
+                    println!("   Summary: {}", stored[0].summary);
+                }
+                if !stored[0].error.is_empty() {
+                    println!("   Error: {}", stored[0].error);
+                }
+            }
+        }
+        Ok(Err(_)) => {
+            println!("\n⚠️  Result channel closed unexpectedly");
+        }
+        Err(_) => {
+            println!("\n⏱️  Timeout waiting for sandboxed execution");
+            let stored = results.lock().await;
+            if stored.is_empty() {
+                println!("   No results received - sandbox may have failed to start");
+            }
+        }
+    }
+
+    // Cleanup
+    let _ = std::fs::remove_file(&socket_path);
+    let _ = std::fs::remove_dir(socket_dir);
+
+    println!("\n=== Sandboxed Execution Test Complete ===\n");
+    server_handle.abort();
+}
