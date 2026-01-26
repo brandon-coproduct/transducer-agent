@@ -135,6 +135,11 @@ impl TransducerService for MockOrchestrator {
 
             println!("📤 Sending work assignment: {}", assignment.assignment_id);
             let _ = response_tx.send(Ok(assignment)).await;
+
+            // Keep stream open to allow work to complete
+            println!("⏳ Keeping work stream open for 60 seconds...");
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            println!("🔌 Work stream closing");
         });
 
         Ok(Response::new(Box::pin(ReceiverStream::new(response_rx))))

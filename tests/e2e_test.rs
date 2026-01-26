@@ -116,8 +116,8 @@ impl TransducerService for TestOrchestrator {
             println!("📤 SENDING WORK: {}", assignment.assignment_id);
             let _ = tx.send(Ok(assignment)).await;
 
-            // Keep stream open briefly
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            // Keep stream open long enough for Claude to respond
+            tokio::time::sleep(Duration::from_secs(120)).await;
         });
 
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
@@ -418,5 +418,131 @@ async fn test_binary_execution() {
     }
 
     println!("\n=== Binary E2E Test Complete ===\n");
+    server_handle.abort();
+}
+
+/// Test with the actual Claude CLI (requires ANTHROPIC_API_KEY).
+/// This test is ignored by default - run with:
+///   cargo test --test e2e_test test_real_claude -- --ignored --nocapture
+#[tokio::test]
+#[ignore]
+async fn test_real_claude() {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    // Install crypto provider
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
+    println!("\n=== Real Claude E2E Test ===\n");
+
+    // Check if claude is available
+    let claude_check = tokio::process::Command::new("claude")
+        .arg("--version")
+        .output()
+        .await;
+
+    if claude_check.is_err() {
+        println!("⚠️  Claude CLI not found, skipping test");
+        return;
+    }
+
+    // Create result notification channel
+    let (result_tx, result_rx) = oneshot::channel();
+    let orchestrator = TestOrchestrator::new(result_tx);
+    let results = orchestrator.results.clone();
+
+    // Start server
+    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let local_addr = listener.local_addr().unwrap();
+    println!("🚀 Mock server on: {}", local_addr);
+
+    let server_handle = tokio::spawn(async move {
+        Server::builder()
+            .add_service(TransducerServiceServer::new(orchestrator))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+    });
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Find transducer binary
+    let binary = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("transducer");
+
+    println!("📦 Using binary: {:?}", binary);
+    println!("🤖 Using real Claude CLI");
+    println!("");
+
+    // Spawn transducer with REAL claude
+    let mut child = tokio::process::Command::new(&binary)
+        .args([
+            "--orchestrator-url",
+            &format!("http://{}", local_addr),
+            "--disable-spiffe",
+            "--transducer-id",
+            "real-claude-agent",
+            // Use the actual claude command (default)
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn transducer binary");
+
+    println!("🚀 Agent started (PID: {:?})", child.id());
+
+    // Read stderr in background
+    let stderr = child.stderr.take().unwrap();
+    tokio::spawn(async move {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            println!("   [agent] {}", line);
+        }
+    });
+
+    // Wait for result with longer timeout (Claude needs time)
+    println!("\n⏳ Waiting for Claude to respond (up to 60s)...\n");
+    let result = tokio::time::timeout(Duration::from_secs(60), result_rx).await;
+
+    // Kill the binary
+    child.kill().await.ok();
+
+    match result {
+        Ok(Ok(())) => {
+            println!("\n🎉 SUCCESS! Result received from Claude!");
+            let stored = results.lock().await;
+            if !stored.is_empty() {
+                println!("   Assignment: {}", stored[0].assignment_id);
+                println!("   Status: {} (1=completed)", stored[0].status);
+                println!("   Summary: {}", stored[0].summary);
+                println!("   Duration: {}ms", stored[0].duration_ms);
+                if !stored[0].error.is_empty() {
+                    println!("   Error: {}", stored[0].error);
+                }
+            }
+        }
+        Ok(Err(_)) => {
+            println!("\n⚠️  Result channel closed unexpectedly");
+        }
+        Err(_) => {
+            println!("\n⏱️  Timeout - Claude may still be processing");
+            // Check if we got any partial results
+            let stored = results.lock().await;
+            if !stored.is_empty() {
+                println!("   But we did receive a result!");
+                println!("   Summary: {}", stored[0].summary);
+            }
+        }
+    }
+
+    println!("\n=== Real Claude Test Complete ===\n");
     server_handle.abort();
 }
