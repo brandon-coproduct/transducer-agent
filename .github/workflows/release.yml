@@ -194,7 +194,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Update Homebrew tap (optional - requires separate tap repo)
+  # Update Homebrew tap (requires separate tap repo and HOMEBREW_TAP_TOKEN secret)
   update-homebrew:
     name: Update Homebrew Formula
     runs-on: ubuntu-latest
@@ -207,17 +207,37 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Download universal macOS binary for SHA
+      - name: Download all platform artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.BINARY_NAME }}-universal-apple-darwin
-          path: .
+          path: artifacts
 
-      - name: Calculate SHA256
+      - name: Calculate SHA256 for all platforms
         id: sha
         run: |
-          SHA=$(sha256sum ${{ env.BINARY_NAME }}-universal-apple-darwin.tar.gz | cut -d' ' -f1)
-          echo "SHA256=$SHA" >> $GITHUB_OUTPUT
+          cd artifacts
+
+          # macOS ARM64
+          SHA_MACOS_ARM64=$(sha256sum ${{ env.BINARY_NAME }}-aarch64-apple-darwin/${{ env.BINARY_NAME }}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+          echo "SHA_MACOS_ARM64=$SHA_MACOS_ARM64" >> $GITHUB_OUTPUT
+
+          # macOS x86_64
+          SHA_MACOS_X86_64=$(sha256sum ${{ env.BINARY_NAME }}-x86_64-apple-darwin/${{ env.BINARY_NAME }}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
+          echo "SHA_MACOS_X86_64=$SHA_MACOS_X86_64" >> $GITHUB_OUTPUT
+
+          # Linux ARM64
+          SHA_LINUX_ARM64=$(sha256sum ${{ env.BINARY_NAME }}-aarch64-unknown-linux-gnu/${{ env.BINARY_NAME }}-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+          echo "SHA_LINUX_ARM64=$SHA_LINUX_ARM64" >> $GITHUB_OUTPUT
+
+          # Linux x86_64
+          SHA_LINUX_X86_64=$(sha256sum ${{ env.BINARY_NAME }}-x86_64-unknown-linux-gnu/${{ env.BINARY_NAME }}-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+          echo "SHA_LINUX_X86_64=$SHA_LINUX_X86_64" >> $GITHUB_OUTPUT
+
+          echo "Calculated SHA256 values:"
+          echo "  macOS ARM64:  $SHA_MACOS_ARM64"
+          echo "  macOS x86_64: $SHA_MACOS_X86_64"
+          echo "  Linux ARM64:  $SHA_LINUX_ARM64"
+          echo "  Linux x86_64: $SHA_LINUX_X86_64"
 
       - name: Update Homebrew formula
         uses: peter-evans/repository-dispatch@v3
@@ -228,6 +248,8 @@ jobs:
           client-payload: |
             {
               "version": "${{ steps.version.outputs.VERSION }}",
-              "sha256": "${{ steps.sha.outputs.SHA256 }}",
-              "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.BINARY_NAME }}-universal-apple-darwin.tar.gz"
+              "sha256_macos_arm64": "${{ steps.sha.outputs.SHA_MACOS_ARM64 }}",
+              "sha256_macos_x86_64": "${{ steps.sha.outputs.SHA_MACOS_X86_64 }}",
+              "sha256_linux_arm64": "${{ steps.sha.outputs.SHA_LINUX_ARM64 }}",
+              "sha256_linux_x86_64": "${{ steps.sha.outputs.SHA_LINUX_X86_64 }}"
             }
