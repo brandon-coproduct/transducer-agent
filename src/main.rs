@@ -630,12 +630,19 @@ async fn execute_sandboxed(
     // Change to working directory before running sandbox
     std::env::set_current_dir(cwd).context("Failed to change to working directory")?;
 
-    let exit_code = sandbox.run(command).await.context("Sandbox execution failed")?;
+    let output = sandbox
+        .run_with_output(command)
+        .await
+        .context("Sandbox execution failed")?;
 
-    // Note: Output capture is handled differently in sandbox mode
-    // The sandbox runs the process directly, so we don't capture stdout/stderr here
-    // For now, return empty output - could be improved with a pipe through sandbox
-    Ok((String::new(), exit_code))
+    // Combine stdout and stderr, preferring stdout if non-empty
+    let combined_output = if !output.stdout.is_empty() {
+        output.stdout
+    } else {
+        output.stderr
+    };
+
+    Ok((combined_output, output.exit_code))
 }
 
 /// Capture stdout/stderr from a child process
