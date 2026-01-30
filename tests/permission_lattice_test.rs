@@ -3,7 +3,7 @@
 //! These tests verify that each permission level in the Seatbelt sandbox
 //! allows the appropriate operations.
 //!
-//! Run with: cargo test --test permission_lattice_test -- --nocapture
+//! Run with: cargo test --test `permission_lattice_test` -- --nocapture
 //!
 //! NOTE: These tests only run on macOS (sandbox-exec is macOS-only).
 
@@ -124,7 +124,7 @@ async fn test_basic_allows_write_to_tmp() {
         &[
             "sh",
             "-c",
-            &format!("echo 'test data' > {} && cat {}", test_file, test_file),
+            &format!("echo 'test data' > {test_file} && cat {test_file}"),
         ],
     )
     .await;
@@ -258,14 +258,13 @@ async fn test_all_levels_restrict_etc_write() {
         let output =
             run_with_level(level, &["sh", "-c", "echo test > /private/etc/test-file"]).await;
 
-        println!("{:?} /etc write:", level);
+        println!("{level:?} /etc write:");
         println!("  exit_code: {}", output.exit_code);
         println!("  stderr: {}", output.stderr.trim());
 
         assert_ne!(
             output.exit_code, 0,
-            "{:?} should not allow writing to /etc",
-            level
+            "{level:?} should not allow writing to /etc"
         );
     }
 }
@@ -459,15 +458,14 @@ async fn test_all_deny_home_read() {
         )
         .await;
 
-        println!("{:?} home read:", level);
+        println!("{level:?} home read:");
         println!("  exit_code: {}", output.exit_code);
         println!("  stderr: {}", output.stderr.trim());
 
         // Policy doesn't include home directory
         assert_ne!(
             output.exit_code, 0,
-            "{:?} should not allow reading home directory (not in policy)",
-            level
+            "{level:?} should not allow reading home directory (not in policy)"
         );
     }
 }
@@ -612,10 +610,7 @@ async fn test_write_tmp_with_policy() {
         &[
             "sh",
             "-c",
-            &format!(
-                "echo 'data' > {} && cat {} && rm {}",
-                test_file, test_file, test_file
-            ),
+            &format!("echo 'data' > {test_file} && cat {test_file} && rm {test_file}"),
         ],
     )
     .await;
@@ -659,24 +654,22 @@ async fn test_deny_write_outside_policy() {
 #[tokio::test]
 async fn test_deny_write_home() {
     let home = std::env::var("HOME").unwrap_or("/Users/test".to_string());
-    let test_file = format!("{}/test-file-should-fail", home);
+    let test_file = format!("{home}/test-file-should-fail");
 
     for level in [
         PermissionLevel::Minimal,
         PermissionLevel::Basic,
         PermissionLevel::Tools,
     ] {
-        let output =
-            run_with_level(level, &["sh", "-c", &format!("touch {} 2>&1", test_file)]).await;
+        let output = run_with_level(level, &["sh", "-c", &format!("touch {test_file} 2>&1")]).await;
 
-        println!("{:?} home write:", level);
+        println!("{level:?} home write:");
         println!("  exit_code: {}", output.exit_code);
         println!("  stderr: {}", output.stderr.trim());
 
         assert_ne!(
             output.exit_code, 0,
-            "{:?} should deny writing to home directory",
-            level
+            "{level:?} should deny writing to home directory"
         );
     }
 }
@@ -794,7 +787,7 @@ async fn test_concurrent_sandbox_executions() {
             tokio::spawn(async move {
                 run_with_level(
                     PermissionLevel::Basic,
-                    &["echo", &format!("concurrent-{}", i)],
+                    &["echo", &format!("concurrent-{i}")],
                 )
                 .await
             })
@@ -820,10 +813,9 @@ async fn test_concurrent_sandbox_executions() {
     for (i, output) in results.iter().enumerate() {
         assert_eq!(
             output.exit_code, 0,
-            "Concurrent execution {} should succeed",
-            i
+            "Concurrent execution {i} should succeed"
         );
-        assert!(output.stdout.contains(&format!("concurrent-{}", i)));
+        assert!(output.stdout.contains(&format!("concurrent-{i}")));
     }
 }
 
@@ -831,15 +823,13 @@ async fn test_concurrent_sandbox_executions() {
 #[tokio::test]
 async fn test_rapid_sequential_executions() {
     for i in 0..10 {
-        let output =
-            run_with_level(PermissionLevel::Minimal, &["echo", &format!("seq-{}", i)]).await;
+        let output = run_with_level(PermissionLevel::Minimal, &["echo", &format!("seq-{i}")]).await;
 
         assert_eq!(
             output.exit_code, 0,
-            "Sequential execution {} should succeed",
-            i
+            "Sequential execution {i} should succeed"
         );
-        assert_eq!(output.stdout.trim(), format!("seq-{}", i));
+        assert_eq!(output.stdout.trim(), format!("seq-{i}"));
     }
     println!("10 rapid sequential executions completed successfully");
 }

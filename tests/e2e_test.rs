@@ -3,7 +3,7 @@
 //! This test runs a mock orchestrator and agent in the same process to verify
 //! the full registration -> work assignment -> execution -> result flow.
 //!
-//! Run with: cargo test --test e2e_test -- --nocapture
+//! Run with: cargo test --test `e2e_test` -- --nocapture
 
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -229,7 +229,7 @@ async fn test_e2e_work_execution() {
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
-    println!("🚀 Test server on: {}\n", local_addr);
+    println!("🚀 Test server on: {local_addr}\n");
 
     // Start server
     let server_handle = tokio::spawn(async move {
@@ -243,7 +243,7 @@ async fn test_e2e_work_execution() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Connect client
-    let channel = tonic::transport::Channel::from_shared(format!("http://{}", local_addr))
+    let channel = tonic::transport::Channel::from_shared(format!("http://{local_addr}"))
         .unwrap()
         .connect()
         .await
@@ -369,7 +369,7 @@ async fn test_binary_execution() {
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
-    println!("🚀 Mock server on: {}", local_addr);
+    println!("🚀 Mock server on: {local_addr}");
 
     let server_handle = tokio::spawn(async move {
         Server::builder()
@@ -389,13 +389,13 @@ async fn test_binary_execution() {
         .unwrap()
         .join("transducer");
 
-    println!("📦 Binary: {:?}", binary);
+    println!("📦 Binary: {binary:?}");
 
     // Spawn transducer binary
     let mut child = tokio::process::Command::new(&binary)
         .args([
             "--orchestrator-url",
-            &format!("http://{}", local_addr),
+            &format!("http://{local_addr}"),
             "--disable-spiffe",
             "--claude-path",
             "echo", // Use echo as mock claude
@@ -415,7 +415,7 @@ async fn test_binary_execution() {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            println!("   [agent] {}", line);
+            println!("   [agent] {line}");
         }
     });
 
@@ -445,11 +445,11 @@ async fn test_binary_execution() {
     server_handle.abort();
 }
 
-/// Test with the actual Claude CLI (requires ANTHROPIC_API_KEY).
+/// Test with the actual Claude CLI (requires `ANTHROPIC_API_KEY`).
 /// This test is ignored by default - run with:
-///   cargo test --test e2e_test test_real_claude -- --ignored --nocapture
+///   cargo test --test `e2e_test` `test_real_claude` -- --ignored --nocapture
 #[tokio::test]
-#[ignore]
+#[ignore = "requires ANTHROPIC_API_KEY and claude CLI"]
 async fn test_real_claude() {
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, BufReader};
@@ -481,7 +481,7 @@ async fn test_real_claude() {
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
-    println!("🚀 Mock server on: {}", local_addr);
+    println!("🚀 Mock server on: {local_addr}");
 
     let server_handle = tokio::spawn(async move {
         Server::builder()
@@ -501,15 +501,15 @@ async fn test_real_claude() {
         .unwrap()
         .join("transducer");
 
-    println!("📦 Using binary: {:?}", binary);
+    println!("📦 Using binary: {binary:?}");
     println!("🤖 Using real Claude CLI");
-    println!("");
+    println!();
 
     // Spawn transducer with REAL claude
     let mut child = tokio::process::Command::new(&binary)
         .args([
             "--orchestrator-url",
-            &format!("http://{}", local_addr),
+            &format!("http://{local_addr}"),
             "--disable-spiffe",
             "--transducer-id",
             "real-claude-agent",
@@ -528,7 +528,7 @@ async fn test_real_claude() {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            println!("   [agent] {}", line);
+            println!("   [agent] {line}");
         }
     });
 
@@ -573,9 +573,10 @@ async fn test_real_claude() {
 
 /// Test with sandbox isolation enabled.
 /// This test requires macOS (Seatbelt) or Linux (bubblewrap).
-/// Run with: cargo test --test e2e_test test_sandboxed_execution -- --ignored --nocapture
+/// Run with: cargo test --test `e2e_test` `test_sandboxed_execution` -- --ignored --nocapture
 #[tokio::test]
-#[ignore]
+#[ignore = "requires macOS Seatbelt or Linux bubblewrap"]
+#[allow(clippy::too_many_lines)]
 async fn test_sandboxed_execution() {
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, BufReader};
@@ -592,21 +593,21 @@ async fn test_sandboxed_execution() {
     let policy_path = std::path::Path::new(&manifest_dir).join("tests/fixtures/test-policy.json");
 
     if !policy_path.exists() {
-        println!("⚠️  Policy file not found: {:?}", policy_path);
+        println!("⚠️  Policy file not found: {policy_path:?}");
         println!("   Creating default policy...");
         return;
     }
 
-    println!("📋 Policy: {:?}", policy_path);
+    println!("📋 Policy: {policy_path:?}");
 
     // Check platform support
     let os = std::env::consts::OS;
-    println!("🖥️  Platform: {}", os);
+    println!("🖥️  Platform: {os}");
     match os {
         "macos" => println!("   Using Seatbelt (sandbox-exec)"),
         "linux" => println!("   Using bubblewrap (bwrap)"),
         _ => {
-            println!("⚠️  Sandbox not supported on {}", os);
+            println!("⚠️  Sandbox not supported on {os}");
             return;
         }
     }
@@ -620,7 +621,7 @@ async fn test_sandboxed_execution() {
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
-    println!("🚀 Mock server on: {}", local_addr);
+    println!("🚀 Mock server on: {local_addr}");
 
     let server_handle = tokio::spawn(async move {
         Server::builder()
@@ -640,9 +641,9 @@ async fn test_sandboxed_execution() {
         .unwrap()
         .join("transducer");
 
-    println!("📦 Binary: {:?}", binary);
+    println!("📦 Binary: {binary:?}");
     println!("🔒 Sandbox: ENABLED");
-    println!("");
+    println!();
 
     // Create socket directory
     let socket_dir = std::path::Path::new("/tmp/transducer-test");
@@ -653,7 +654,7 @@ async fn test_sandboxed_execution() {
     let mut child = tokio::process::Command::new(&binary)
         .args([
             "--orchestrator-url",
-            &format!("http://{}", local_addr),
+            &format!("http://{local_addr}"),
             "--disable-spiffe",
             "--transducer-id",
             "sandboxed-agent",
@@ -675,7 +676,7 @@ async fn test_sandboxed_execution() {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            println!("   [agent] {}", line);
+            println!("   [agent] {line}");
         }
     });
 

@@ -47,12 +47,12 @@ impl SpiffeCredentials {
 
         let client = WorkloadApiClient::connect_env()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to connect to SPIFFE workload API: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to connect to SPIFFE workload API: {e}"))?;
 
         let context = client
             .fetch_x509_context()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 context: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 context: {e}"))?;
 
         let svid = context
             .default_svid()
@@ -102,12 +102,12 @@ impl SpiffeCredentials {
 
         // Get the CA bundle for server verification
         let trust_domain = TrustDomain::new(server_trust_domain)
-            .map_err(|e| anyhow::anyhow!("Invalid trust domain: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid trust domain: {e}"))?;
 
         let bundle = context
             .bundle_set()
             .get(&trust_domain)
-            .ok_or_else(|| anyhow::anyhow!("No bundle for trust domain {}", trust_domain))?;
+            .ok_or_else(|| anyhow::anyhow!("No bundle for trust domain {trust_domain}"))?;
 
         // Convert trust bundle authorities to PEM
         let mut ca_pem = Vec::new();
@@ -140,7 +140,7 @@ impl SpiffeCredentials {
     ///
     /// # Arguments
     ///
-    /// * `endpoint` - The server endpoint (e.g., "https://daemon.internal:4003")
+    /// * `endpoint` - The server endpoint (e.g., `https://daemon.internal:4003`)
     /// * `trust_domain` - Expected SPIFFE trust domain of the server
     pub async fn connect(&self, endpoint: &str, trust_domain: &str) -> Result<Channel> {
         let tls_config = self.to_tls_config(trust_domain).await?;
@@ -179,12 +179,12 @@ impl SpiffeCredentials {
     async fn refresh(&self) -> Result<()> {
         let client = WorkloadApiClient::connect_env()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to reconnect to workload API: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to reconnect to workload API: {e}"))?;
 
         let new_context = client
             .fetch_x509_context()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch refreshed context: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to fetch refreshed context: {e}"))?;
 
         let mut context = self.context.write().await;
         *context = new_context;

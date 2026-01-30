@@ -3,13 +3,12 @@
 //! These tests verify that the sandbox actually blocks forbidden operations
 //! at the OS level, not just at the policy check level.
 //!
-//! Run with: cargo test --test sandbox_enforcement_test -- --nocapture
+//! Run with: `cargo test --test sandbox_enforcement_test -- --nocapture`
 //!
 //! NOTE: These tests only run on macOS (sandbox-exec is macOS-only).
 
 #![cfg(target_os = "macos")]
 
-use std::path::Path;
 use transducer_sandbox::{Policy, Sandbox};
 
 /// Test that writing to allowed paths succeeds.
@@ -42,7 +41,7 @@ async fn test_write_allowed_path() {
         .run_with_output(&[
             "sh",
             "-c",
-            &format!("echo 'test' > {} && cat {}", test_file, test_file),
+            &format!("echo 'test' > {test_file} && cat {test_file}"),
         ])
         .await
         .expect("Sandbox execution failed");
@@ -91,7 +90,7 @@ async fn test_write_forbidden_path() {
     // Try to write to /tmp/forbidden (not in write paths)
     let test_file = format!("/tmp/forbidden-test-{}", std::process::id());
     let output = sandbox
-        .run_with_output(&["sh", "-c", &format!("echo 'test' > {}", test_file)])
+        .run_with_output(&["sh", "-c", &format!("echo 'test' > {test_file}")])
         .await
         .expect("Sandbox execution failed");
 
@@ -229,7 +228,7 @@ async fn test_reflection_api_accessible() {
 
     let socket_dir = format!("/tmp/transducer-test-{}", std::process::id());
     std::fs::create_dir_all(&socket_dir).ok();
-    let socket_path = format!("{}/policy.sock", socket_dir);
+    let socket_path = format!("{socket_dir}/policy.sock");
 
     let sandbox = Sandbox::with_socket_path(policy, &socket_path).unwrap();
 
@@ -239,8 +238,7 @@ async fn test_reflection_api_accessible() {
             "sh",
             "-c",
             &format!(
-                "sleep 0.5 && curl -s --unix-socket {} http://localhost/policy | head -c 100",
-                socket_path
+                "sleep 0.5 && curl -s --unix-socket {socket_path} http://localhost/policy | head -c 100"
             ),
         ])
         .await
@@ -304,8 +302,7 @@ fn test_policy_permission_checks() {
         println!("  {} -> {} (expected: {})", path, result.allowed, expected);
         assert_eq!(
             result.allowed, expected,
-            "can_write({}) should be {}",
-            path, expected
+            "can_write({path}) should be {expected}"
         );
     }
 
@@ -322,8 +319,7 @@ fn test_policy_permission_checks() {
         println!("  {} -> {} (expected: {})", path, result.allowed, expected);
         assert_eq!(
             result.allowed, expected,
-            "can_read({}) should be {}",
-            path, expected
+            "can_read({path}) should be {expected}"
         );
     }
 
@@ -344,8 +340,7 @@ fn test_policy_permission_checks() {
         );
         assert_eq!(
             result.allowed, expected,
-            "can_access_network({}) should be {}",
-            domain, expected
+            "can_access_network({domain}) should be {expected}"
         );
     }
 
@@ -364,8 +359,7 @@ fn test_policy_permission_checks() {
         println!("  {} -> {} (expected: {})", cmd, result.allowed, expected);
         assert_eq!(
             result.allowed, expected,
-            "can_run_bash({}) should be {}",
-            cmd, expected
+            "can_run_bash({cmd}) should be {expected}"
         );
     }
 

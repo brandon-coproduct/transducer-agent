@@ -1999,6 +1999,7 @@ dependencies = [
  "futures",
  "hostname",
  "pem",
+ "regex",
  "rustls",
  "serde",
  "serde_json",

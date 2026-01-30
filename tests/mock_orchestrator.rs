@@ -1,6 +1,6 @@
 //! Mock orchestrator for end-to-end testing of transducer-agent.
 //!
-//! Run with: cargo test --test mock_orchestrator -- --nocapture
+//! Run with: `cargo test --test mock_orchestrator -- --nocapture`
 
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -240,18 +240,22 @@ async fn test_mock_orchestrator_starts() {
     // Just verify it can bind
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
-    println!("Mock orchestrator would listen on: {}", local_addr);
+    println!("Mock orchestrator would listen on: {local_addr}");
 }
 
 /// Run the mock orchestrator as a standalone server for manual testing.
 ///
 /// Usage:
-///   cargo test --test mock_orchestrator run_mock_server -- --nocapture --ignored
+/// ```text
+/// cargo test --test mock_orchestrator run_mock_server -- --nocapture --ignored
+/// ```
 ///
 /// Then in another terminal:
-///   cargo run -- --orchestrator-url=http://127.0.0.1:4003 --disable-spiffe
+/// ```text
+/// cargo run -- --orchestrator-url=http://127.0.0.1:4003 --disable-spiffe
+/// ```
 #[tokio::test]
-#[ignore]
+#[ignore = "manual test - runs mock server for integration testing"]
 async fn run_mock_server() {
     // Install crypto provider
     rustls::crypto::ring::default_provider()
@@ -262,12 +266,12 @@ async fn run_mock_server() {
     let orchestrator = MockOrchestrator::new(work_tx);
 
     let addr: SocketAddr = "127.0.0.1:4003".parse().unwrap();
-    println!("🚀 Starting mock orchestrator on {}", addr);
-    println!("");
+    println!("Starting mock orchestrator on {addr}");
+    println!();
     println!("To test, run in another terminal:");
     println!("  cd /Users/bcrisp/coproduct/transducer-agent");
     println!("  cargo run -- --orchestrator-url=http://127.0.0.1:4003 --disable-spiffe");
-    println!("");
+    println!();
 
     Server::builder()
         .add_service(TransducerServiceServer::new(orchestrator))
