@@ -210,6 +210,12 @@ impl TransducerCredentials {
     /// Falls back to token auth if SPIFFE workload API is unavailable,
     /// or no auth if neither is configured.
     ///
+    /// **Pa.Spiffe.Audit.H6 — local-dev only.** Production callers
+    /// MUST use [`Self::strict`] which refuses `Self::None`. The audit
+    /// identified `auto()` as a fail-open security boundary: in
+    /// production where SPIRE goes down (oom, network blip), this
+    /// silently fell through to no-auth.
+    ///
     /// # Environment Variables
     ///
     /// * `SPIFFE_ENDPOINT_SOCKET` - SPIRE agent socket path
@@ -237,6 +243,37 @@ impl TransducerCredentials {
         // No auth (development only)
         warn!("No authentication configured - using insecure connection");
         Self::None
+    }
+
+    /// Pa.Spiffe.Audit.H6 — production-grade constructor that
+    /// REFUSES `Self::None`. Returns `Err` when neither SPIRE socket
+    /// nor `TRANSDUCER_AUTH_TOKEN` is available.
+    ///
+    /// Pre-H6 the production binary called `auto()` which silently
+    /// fell through to `Self::None` + an unauthenticated channel
+    /// when SPIRE was down. The audit shape: "security boundary
+    /// fails open on environmental check." Post-H6, the production
+    /// binary calls `strict()` and refuses to start without real
+    /// authentication; an operator who genuinely wants to run
+    /// without auth must set `TRANSDUCER_ALLOW_NO_AUTH=1` or pass
+    /// `--disable-spiffe` (both opt-in, both wired in main.rs).
+    ///
+    /// Pa.CLAUDE.md "Proof, not heuristic": `strict()` returns
+    /// `Result<Self>` so a caller that forgets to handle the Err
+    /// gets a compile error. Compare to a "remember to check for
+    /// None after auto()" pattern — no compile-time guard.
+    pub async fn strict() -> Result<Self> {
+        match Self::auto().await {
+            Self::Spiffe(c) => Ok(Self::Spiffe(c)),
+            Self::Token(t) => Ok(Self::Token(t)),
+            Self::None => Err(anyhow::anyhow!(
+                "Pa.Spiffe.Audit.H6: refusing to start without authentication. \
+                 Neither SPIRE socket (SPIFFE_ENDPOINT_SOCKET) nor token \
+                 (TRANSDUCER_AUTH_TOKEN) is available. To run without \
+                 authentication explicitly (insecure; local dev only), set \
+                 TRANSDUCER_ALLOW_NO_AUTH=1 or pass --disable-spiffe."
+            )),
+        }
     }
 
     /// Create a gRPC channel with the appropriate authentication.
@@ -331,6 +368,143 @@ mod tests {
         assert!(
             !available,
             "Expected SPIFFE to be unavailable in test environment"
+        );
+    }
+
+    // ── Pa.Spiffe.Audit.H6 — strict() refuses None ──
+    //
+    // The H6 contract: production transducer-agent binary refuses to
+    // start without SPIRE socket OR explicit insecure flag. These
+    // tests assert the Result<Self> shape on the strict()
+    // constructor; the main.rs wiring of opt-in flags is exercised
+    // by the binary itself (compile-time-asserted via the ?
+    // propagation in main()).
+    //
+    // Tests mutate process env, so they serialize via H6_ENV_LOCK.
+    use std::sync::Mutex;
+    static H6_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Pa.Spiffe.Audit.H6 regression test — THIS IS THE BUG-AS-WAS.
+    /// Pre-H6, with no SPIFFE socket and no TRANSDUCER_AUTH_TOKEN,
+    /// auto() silently returned Self::None and the next connect()
+    /// opened an unauthenticated channel. Post-H6, strict() returns
+    /// Err in the same scenario, forcing the caller to handle it
+    /// (production binaries propagate via ? and refuse to start).
+    #[tokio::test]
+    async fn h6_strict_with_no_creds_returns_err() {
+        let _lock = H6_ENV_LOCK.lock().unwrap();
+        let prior_token = std::env::var("TRANSDUCER_AUTH_TOKEN").ok();
+        let prior_socket = std::env::var("SPIFFE_ENDPOINT_SOCKET").ok();
+        std::env::remove_var("TRANSDUCER_AUTH_TOKEN");
+        // Point SPIFFE socket at a path that definitely doesn't
+        // exist so the SPIRE fetch fails fast.
+        std::env::set_var(
+            "SPIFFE_ENDPOINT_SOCKET",
+            "unix:///nonexistent/h6-test/socket",
+        );
+
+        let r = TransducerCredentials::strict().await;
+
+        // Restore env regardless of test outcome.
+        match prior_token {
+            Some(v) => std::env::set_var("TRANSDUCER_AUTH_TOKEN", v),
+            None => std::env::remove_var("TRANSDUCER_AUTH_TOKEN"),
+        }
+        match prior_socket {
+            Some(v) => std::env::set_var("SPIFFE_ENDPOINT_SOCKET", v),
+            None => std::env::remove_var("SPIFFE_ENDPOINT_SOCKET"),
+        }
+
+        assert!(
+            r.is_err(),
+            "Pa.Spiffe.Audit.H6: strict() must Err when no SPIFFE socket and no TRANSDUCER_AUTH_TOKEN"
+        );
+    }
+
+    /// Pa.Spiffe.Audit.H6 — token-only path. With
+    /// `TRANSDUCER_AUTH_TOKEN` set (and SPIFFE unavailable),
+    /// `strict()` returns Ok(Token). Proves the fix isn't
+    /// over-aggressive (legitimate token auth still works).
+    #[tokio::test]
+    async fn h6_strict_with_token_returns_ok() {
+        let _lock = H6_ENV_LOCK.lock().unwrap();
+        let prior_token = std::env::var("TRANSDUCER_AUTH_TOKEN").ok();
+        let prior_socket = std::env::var("SPIFFE_ENDPOINT_SOCKET").ok();
+        std::env::set_var("TRANSDUCER_AUTH_TOKEN", "h6-test-token-value");
+        std::env::set_var(
+            "SPIFFE_ENDPOINT_SOCKET",
+            "unix:///nonexistent/h6-test/socket",
+        );
+
+        let r = TransducerCredentials::strict().await;
+
+        // Restore env.
+        match prior_token {
+            Some(v) => std::env::set_var("TRANSDUCER_AUTH_TOKEN", v),
+            None => std::env::remove_var("TRANSDUCER_AUTH_TOKEN"),
+        }
+        match prior_socket {
+            Some(v) => std::env::set_var("SPIFFE_ENDPOINT_SOCKET", v),
+            None => std::env::remove_var("SPIFFE_ENDPOINT_SOCKET"),
+        }
+
+        match r {
+            Ok(TransducerCredentials::Token(t)) => {
+                assert_eq!(t, "h6-test-token-value");
+            }
+            Ok(_) => panic!("expected Ok(Token), got Ok(Spiffe|None)"),
+            Err(e) => panic!("expected Ok(Token), got Err: {}", e),
+        }
+    }
+
+    /// Pa.Spiffe.Audit.H6 — error message must mention BOTH the
+    /// SPIRE socket env var AND the token env var AND the explicit
+    /// opt-in flag, so an operator hitting this error knows the
+    /// three remediation paths. Without this test the helpful
+    /// migration message could rot silently.
+    #[tokio::test]
+    async fn h6_strict_err_message_lists_all_remediation_paths() {
+        let _lock = H6_ENV_LOCK.lock().unwrap();
+        let prior_token = std::env::var("TRANSDUCER_AUTH_TOKEN").ok();
+        let prior_socket = std::env::var("SPIFFE_ENDPOINT_SOCKET").ok();
+        std::env::remove_var("TRANSDUCER_AUTH_TOKEN");
+        std::env::set_var(
+            "SPIFFE_ENDPOINT_SOCKET",
+            "unix:///nonexistent/h6-test/socket",
+        );
+
+        let r = TransducerCredentials::strict().await;
+
+        match prior_token {
+            Some(v) => std::env::set_var("TRANSDUCER_AUTH_TOKEN", v),
+            None => std::env::remove_var("TRANSDUCER_AUTH_TOKEN"),
+        }
+        match prior_socket {
+            Some(v) => std::env::set_var("SPIFFE_ENDPOINT_SOCKET", v),
+            None => std::env::remove_var("SPIFFE_ENDPOINT_SOCKET"),
+        }
+
+        // unwrap_err requires Ok variant Debug, which TransducerCredentials
+        // doesn't implement. Match instead.
+        let err_msg = match r {
+            Ok(_) => panic!("strict() must Err with no creds available"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err_msg.contains("SPIFFE_ENDPOINT_SOCKET"),
+            "err msg must mention SPIRE socket env var; got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("TRANSDUCER_AUTH_TOKEN"),
+            "err msg must mention token env var; got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("TRANSDUCER_ALLOW_NO_AUTH")
+                || err_msg.contains("--disable-spiffe"),
+            "err msg must name the explicit insecure opt-in path; got: {}",
+            err_msg
         );
     }
 }

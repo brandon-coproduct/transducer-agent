@@ -112,9 +112,17 @@ struct Args {
     #[arg(long, env = "SPIFFE_TRUST_DOMAIN", default_value = "groundtruth.local")]
     spiffe_trust_domain: String,
 
-    /// Disable SPIFFE authentication (use insecure connection)
+    /// Disable SPIFFE authentication (use insecure connection).
+    /// Pa.Spiffe.Audit.H6 — explicit opt-in for no-auth.
     #[arg(long, env = "DISABLE_SPIFFE")]
     disable_spiffe: bool,
+
+    /// Pa.Spiffe.Audit.H6 — alternate explicit opt-in for the
+    /// insecure no-auth path. Same effect as `--disable-spiffe` but
+    /// expressed as a positive grant ("I am explicitly allowing
+    /// no-auth"). Production deploys MUST NOT set this.
+    #[arg(long, env = "TRANSDUCER_ALLOW_NO_AUTH")]
+    allow_no_auth: bool,
 
     /// Path to sandbox policy JSON file (enables sandboxed execution)
     #[arg(long, env = "SANDBOX_POLICY")]
@@ -152,12 +160,31 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // Initialize authentication credentials
-    let credentials = if args.disable_spiffe {
-        info!("SPIFFE authentication disabled via flag");
+    // Initialize authentication credentials. Pa.Spiffe.Audit.H6 —
+    // production path uses strict() which refuses to start without
+    // real auth (returns Err propagated by `?`). The insecure no-auth
+    // path requires explicit opt-in via `--disable-spiffe` OR
+    // `--allow-no-auth` (env: TRANSDUCER_ALLOW_NO_AUTH=1). Pre-H6
+    // the binary called auto() which silently fell through to
+    // Self::None when SPIRE was unreachable — a fail-open security
+    // boundary the audit flagged as ship-blocking.
+    let credentials = if args.disable_spiffe || args.allow_no_auth {
+        info!(
+            disable_spiffe = args.disable_spiffe,
+            allow_no_auth = args.allow_no_auth,
+            "Pa.Spiffe.Audit.H6: explicit insecure-mode opt-in; running without authentication"
+        );
         TransducerCredentials::None
     } else {
-        TransducerCredentials::auto().await
+        TransducerCredentials::strict().await.map_err(|e| {
+            anyhow::anyhow!(
+                "Pa.Spiffe.Audit.H6: refusing to start without authentication. \
+                 Configure SPIRE socket or TRANSDUCER_AUTH_TOKEN, OR pass \
+                 --disable-spiffe / --allow-no-auth to opt into insecure mode. \
+                 Underlying error: {}",
+                e
+            )
+        })?
     };
 
     // Generate transducer ID, preferring SPIFFE ID if available
