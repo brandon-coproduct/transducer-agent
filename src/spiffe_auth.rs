@@ -507,4 +507,142 @@ mod tests {
             err_msg
         );
     }
+
+    // ── Pa.Spiffe.Audit.H7 — agent-side negative-path tests ──
+    //
+    // Companion to the orchestrator-side tests at
+    // `tests/spiffe_negative_paths_test.rs`. The two together
+    // satisfy the audit's "≥5 new negative-path tests" criterion.
+    //
+    // These tests cover the failure modes of TransducerCredentials
+    // from the AGENT side:
+    //   - auto() correctly returns None when no creds are present
+    //   - auto() correctly ignores empty TRANSDUCER_AUTH_TOKEN
+    //     (defends against a future refactor that drops the
+    //     `!is_empty()` guard)
+    //   - auto() falls back to Token when SPIRE is unavailable but
+    //     TRANSDUCER_AUTH_TOKEN is set
+    //   - connect() with Self::None propagates URL-parse errors
+    //
+    // All tests serialize via H6_ENV_LOCK (defined above) since
+    // they touch the same global env vars as the H6 tests.
+
+    /// Pa.Spiffe.Audit.H7 #1 — auto() returns Self::None when neither
+    /// SPIRE socket nor token is configured. Locks the auto()
+    /// behavior in place; H6's strict() refuses this same scenario,
+    /// but auto() itself remains permissive (it's the local-dev path).
+    #[tokio::test]
+    async fn h7_auto_with_no_spire_socket_returns_none() {
+        let _lock = H6_ENV_LOCK.lock().unwrap();
+        let prior_token = std::env::var("TRANSDUCER_AUTH_TOKEN").ok();
+        let prior_socket = std::env::var("SPIFFE_ENDPOINT_SOCKET").ok();
+        std::env::remove_var("TRANSDUCER_AUTH_TOKEN");
+        std::env::set_var(
+            "SPIFFE_ENDPOINT_SOCKET",
+            "unix:///nonexistent/h7-test/socket",
+        );
+
+        let creds = TransducerCredentials::auto().await;
+
+        match prior_token {
+            Some(v) => std::env::set_var("TRANSDUCER_AUTH_TOKEN", v),
+            None => std::env::remove_var("TRANSDUCER_AUTH_TOKEN"),
+        }
+        match prior_socket {
+            Some(v) => std::env::set_var("SPIFFE_ENDPOINT_SOCKET", v),
+            None => std::env::remove_var("SPIFFE_ENDPOINT_SOCKET"),
+        }
+
+        assert!(
+            matches!(creds, TransducerCredentials::None),
+            "auto() must return Self::None when no SPIRE and no token"
+        );
+    }
+
+    /// Pa.Spiffe.Audit.H7 #2 — empty TRANSDUCER_AUTH_TOKEN is treated
+    /// as "no token," not "use empty string as token." Defends against
+    /// a future refactor that drops the `!token.is_empty()` check —
+    /// without it, an unset-but-defaulted env var (rare but possible
+    /// with shell heredocs) would yield a Token("") that authenticated
+    /// nothing.
+    #[tokio::test]
+    async fn h7_auto_with_empty_token_env_does_not_use_it() {
+        let _lock = H6_ENV_LOCK.lock().unwrap();
+        let prior_token = std::env::var("TRANSDUCER_AUTH_TOKEN").ok();
+        let prior_socket = std::env::var("SPIFFE_ENDPOINT_SOCKET").ok();
+        std::env::set_var("TRANSDUCER_AUTH_TOKEN", "");
+        std::env::set_var(
+            "SPIFFE_ENDPOINT_SOCKET",
+            "unix:///nonexistent/h7-test/socket",
+        );
+
+        let creds = TransducerCredentials::auto().await;
+
+        match prior_token {
+            Some(v) => std::env::set_var("TRANSDUCER_AUTH_TOKEN", v),
+            None => std::env::remove_var("TRANSDUCER_AUTH_TOKEN"),
+        }
+        match prior_socket {
+            Some(v) => std::env::set_var("SPIFFE_ENDPOINT_SOCKET", v),
+            None => std::env::remove_var("SPIFFE_ENDPOINT_SOCKET"),
+        }
+
+        assert!(
+            matches!(creds, TransducerCredentials::None),
+            "empty TRANSDUCER_AUTH_TOKEN must be treated as no-token; got non-None variant"
+        );
+    }
+
+    /// Pa.Spiffe.Audit.H7 #3 — fallback ordering. With
+    /// TRANSDUCER_AUTH_TOKEN set but SPIRE unavailable, auto()
+    /// returns Self::Token(...). Without this assertion, the H6
+    /// strict() fix could be over-aggressive — a legitimate token-
+    /// only flow would also be rejected.
+    #[tokio::test]
+    async fn h7_auto_with_token_but_no_spire_returns_token() {
+        let _lock = H6_ENV_LOCK.lock().unwrap();
+        let prior_token = std::env::var("TRANSDUCER_AUTH_TOKEN").ok();
+        let prior_socket = std::env::var("SPIFFE_ENDPOINT_SOCKET").ok();
+        std::env::set_var("TRANSDUCER_AUTH_TOKEN", "h7-test-token-value");
+        std::env::set_var(
+            "SPIFFE_ENDPOINT_SOCKET",
+            "unix:///nonexistent/h7-test/socket",
+        );
+
+        let creds = TransducerCredentials::auto().await;
+
+        match prior_token {
+            Some(v) => std::env::set_var("TRANSDUCER_AUTH_TOKEN", v),
+            None => std::env::remove_var("TRANSDUCER_AUTH_TOKEN"),
+        }
+        match prior_socket {
+            Some(v) => std::env::set_var("SPIFFE_ENDPOINT_SOCKET", v),
+            None => std::env::remove_var("SPIFFE_ENDPOINT_SOCKET"),
+        }
+
+        match creds {
+            TransducerCredentials::Token(t) => assert_eq!(t, "h7-test-token-value"),
+            TransducerCredentials::Spiffe(_) => {
+                panic!("expected Token, got Spiffe (test environment shouldn't have SPIRE)")
+            }
+            TransducerCredentials::None => {
+                panic!("expected Token, got None — auto() failed to use TRANSDUCER_AUTH_TOKEN")
+            }
+        }
+    }
+
+    /// Pa.Spiffe.Audit.H7 #4 — `Self::None.connect(&bogus_url, ...)`
+    /// returns an error. Proves the URL parser actually catches
+    /// malformed endpoints; without this, a future refactor that
+    /// silently constructs a broken Channel would not be caught
+    /// until the first wire request failed cryptically.
+    #[tokio::test]
+    async fn h7_connect_with_none_creds_fails_on_invalid_endpoint() {
+        let creds = TransducerCredentials::None;
+        let r = creds.connect("not-a-valid-url://", "some.trust.domain").await;
+        assert!(
+            r.is_err(),
+            "connect() must Err on invalid endpoint URL"
+        );
+    }
 }
